@@ -44,9 +44,10 @@ function activate(context) {
         provideDocumentFormattingEdits(document) {
             const config = vscode.workspace.getConfiguration('expr');
             const indentSize = config.get('indentSize', 2);
+            const maxLineLength = config.get('maxLineLength', 120);
             try {
                 const text = document.getText();
-                const formatted = (0, formatter_1.format)(text, { indentSize });
+                const formatted = (0, formatter_1.format)(text, { indentSize, maxLineLength });
                 const fullRange = new vscode.Range(document.positionAt(0), document.positionAt(text.length));
                 return [vscode.TextEdit.replace(fullRange, formatted)];
             }

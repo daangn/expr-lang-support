@@ -56,7 +56,8 @@ Format on save is enabled by default. To disable:
 
 ```json
 {
-  "expr.indentSize": 2  // Number of spaces for indentation
+  "expr.indentSize": 2,         // Number of spaces for indentation
+  "expr.maxLineLength": 120     // Maximum line length before expanding functions
 }
 ```
 

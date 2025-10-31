@@ -7,18 +7,43 @@ export interface FormatOptions {
 
 const DEFAULT_OPTIONS: FormatOptions = {
   indentSize: 2,
-  maxLineLength: 80,
+  maxLineLength: 120,
 };
 
 export function format(input: string, options: Partial<FormatOptions> = {}): string {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   const tokens = tokenize(input).filter(t => t.type !== TokenType.EOF);
 
+
   const lines: string[] = [];
   let indentLevel = 0;
   let i = 0;
 
   const indent = () => ' '.repeat(indentLevel * opts.indentSize);
+
+  // Check if token at index is a function call (function name followed by LPAREN)
+  const isFunctionCall = (idx: number): boolean => {
+    if (idx >= tokens.length) return false;
+    const tok = tokens[idx];
+    const nextTok = tokens[idx + 1];
+    return (tok.type === TokenType.IDENTIFIER || tok.type === TokenType.KEYWORD) &&
+           nextTok?.type === TokenType.LPAREN;
+  };
+
+  // Get function name at index (assumes isFunctionCall returned true)
+  const getFunctionName = (idx: number): string => {
+    return tokens[idx].value;
+  };
+
+  // Check if previous non-whitespace token is an operator
+  const prevTokenIsOperator = (currentIdx: number): boolean => {
+    for (let j = currentIdx - 1; j >= 0; j--) {
+      const t = tokens[j];
+      if (t.type === TokenType.NEWLINE) continue;
+      return t.type === TokenType.OPERATOR;
+    }
+    return false;
+  };
 
   // Convert tokens to string
   const tokensToString = (toks: Token[]): string => {
@@ -51,27 +76,44 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
     return result;
   };
 
+  // Check if there's immediate nesting (paren/function right after opening)
+  const hasImmediateNesting = (startIdx: number): boolean => {
+    // startIdx should point to LPAREN
+    if (tokens[startIdx]?.type !== TokenType.LPAREN) return false;
+
+    let nextIdx = startIdx + 1;
+    // Skip newlines
+    while (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.NEWLINE) {
+      nextIdx++;
+    }
+
+    if (nextIdx >= tokens.length) return false;
+
+    const nextToken = tokens[nextIdx];
+    // Check if immediately followed by another LPAREN or a function call
+    return nextToken.type === TokenType.LPAREN || isFunctionCall(nextIdx);
+  };
+
   // Measure content length until closing paren
-  const measureToClosingParen = (startIdx: number): { length: number; hasNestedIF: boolean; endIdx: number } => {
+  const measureToClosingParen = (startIdx: number): { length: number; hasImmediateNesting: boolean; endIdx: number } => {
     let depth = 0;
-    let hasNestedIF = false;
     let j = startIdx;
     const collectedTokens: Token[] = [];
+    const immediateNesting = hasImmediateNesting(startIdx);
 
     for (; j < tokens.length; j++) {
       const t = tokens[j];
-      if (t.type === TokenType.LPAREN) depth++;
+      if (t.type === TokenType.LPAREN) {
+        depth++;
+      }
       if (t.type === TokenType.RPAREN) {
         depth--;
         if (depth === 0) {
           // Found matching closing paren - include it and return
           collectedTokens.push(t);
           const length = tokensToString(collectedTokens).length;
-          return { length, hasNestedIF, endIdx: j };
+          return { length, hasImmediateNesting: immediateNesting, endIdx: j };
         }
-      }
-      if (t.type === TokenType.KEYWORD && t.value === 'IF' && j > startIdx) {
-        hasNestedIF = true;
       }
       if (t.type !== TokenType.NEWLINE) {
         collectedTokens.push(t);
@@ -79,16 +121,26 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
     }
 
     const length = tokensToString(collectedTokens).length;
-    return { length, hasNestedIF, endIdx: j };
+    return { length, hasImmediateNesting: immediateNesting, endIdx: j };
   };
 
-  // Format IF expression on multiple lines
-  const formatIFMultiline = (startIdx: number): number => {
+  // Format function call on multiple lines
+  const formatFunctionMultiline = (startIdx: number): number => {
     let idx = startIdx;
+    const funcName = getFunctionName(idx);
 
-    // Output "IF("
-    lines.push(indent() + 'IF(');
-    idx++; // Skip IF
+    // Check if previous token is an operator
+    const prevIsOp = prevTokenIsOperator(startIdx);
+
+    if (prevIsOp) {
+      // Append function call to the last line with a space
+      lines[lines.length - 1] = lines[lines.length - 1] + ' ' + funcName + '(';
+    } else {
+      // Output "FUNC(" on a new line
+      lines.push(indent() + funcName + '(');
+    }
+
+    idx++; // Skip function name
 
     if (tokens[idx]?.type === TokenType.LPAREN) {
       idx++; // Skip opening paren
@@ -106,7 +158,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       if (tok.type === TokenType.RPAREN) {
         depth--;
         if (depth === 0) {
-          // End of IF - output last argument
+          // End of function - output last argument
           if (currentArg.length > 0) {
             lines.push(indent() + tokensToString(currentArg));
           }
@@ -126,41 +178,36 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
         }
         currentArg = [];
       } else if (tok.type === TokenType.COMMENT) {
-        // Comment inside IF
+        // Comment inside function
         if (currentArg.length > 0) {
           lines.push(indent() + tokensToString(currentArg));
           currentArg = [];
         }
         lines.push(indent() + tok.value);
-      } else if (tok.type === TokenType.KEYWORD && tok.value === 'IF') {
-        // Nested IF - check if it needs expansion
+      } else if (isFunctionCall(idx)) {
+        // Nested function call - check if it needs expansion
         const nestedNextIdx = idx + 1;
-        if (tokens[nestedNextIdx]?.type === TokenType.LPAREN) {
-          const { length: nestedLength, hasNestedIF: nestedHasNested } = measureToClosingParen(nestedNextIdx);
+        const { length: nestedLength, hasImmediateNesting: nestedHasImmediate } = measureToClosingParen(nestedNextIdx);
 
-          if (nestedLength > opts.maxLineLength || nestedHasNested) {
-            // Nested IF needs expansion
-            if (currentArg.length > 0) {
-              lines.push(indent() + tokensToString(currentArg));
-              currentArg = [];
-            }
-            idx = formatIFMultiline(idx);
-
-            // Check if there's a comma after the nested IF
-            if (idx < tokens.length && tokens[idx].type === TokenType.COMMA && depth === 1) {
-              // Add comma to the last line
-              if (lines.length > 0) {
-                lines[lines.length - 1] += ',';
-              }
-              idx++; // Skip the comma
-            }
-            continue;
-          } else {
-            // Nested IF doesn't need expansion - treat it as part of current argument
-            currentArg.push(tok);
+        if (nestedLength > opts.maxLineLength || nestedHasImmediate) {
+          // Nested function needs expansion
+          if (currentArg.length > 0) {
+            lines.push(indent() + tokensToString(currentArg));
+            currentArg = [];
           }
+          idx = formatFunctionMultiline(idx);
+
+          // Check if there's a comma after the nested function
+          if (idx < tokens.length && tokens[idx].type === TokenType.COMMA && depth === 1) {
+            // Add comma to the last line
+            if (lines.length > 0) {
+              lines[lines.length - 1] += ',';
+            }
+            idx++; // Skip the comma
+          }
+          continue;
         } else {
-          // No paren after IF - just add to current arg
+          // Nested function doesn't need expansion - treat it as part of current argument
           currentArg.push(tok);
         }
       } else if (tok.type !== TokenType.NEWLINE) {
@@ -197,38 +244,36 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       continue;
     }
 
-    // Handle IF keyword
-    if (token.type === TokenType.KEYWORD && token.value === 'IF') {
+    // Handle function calls
+    if (isFunctionCall(i)) {
       const nextIdx = i + 1;
-      if (tokens[nextIdx]?.type === TokenType.LPAREN) {
-        const { length, hasNestedIF } = measureToClosingParen(nextIdx);
+      const { length, hasImmediateNesting } = measureToClosingParen(nextIdx);
 
-        // Expand if long or has nested IF
-        if (length > opts.maxLineLength || hasNestedIF) {
-          i = formatIFMultiline(i);
-          continue;
-        }
+      // Expand if long or has immediate nesting
+      if (length > opts.maxLineLength || hasImmediateNesting) {
+        i = formatFunctionMultiline(i);
+        continue;
       }
       // If we don't expand, fall through to normal line processing
     }
 
     // Handle opening paren - check if we should expand
     if (token.type === TokenType.LPAREN) {
-      // Look ahead to see if there's IF inside
+      // Look ahead to see if there's a function call inside
       let nextIdx = i + 1;
       while (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.NEWLINE) {
         nextIdx++;
       }
 
-      if (tokens[nextIdx]?.type === TokenType.KEYWORD && tokens[nextIdx].value === 'IF') {
-        const { length, hasNestedIF } = measureToClosingParen(nextIdx + 1);
+      if (isFunctionCall(nextIdx)) {
+        // Measure from the opening paren to include immediate nesting check
+        const { length, hasImmediateNesting } = measureToClosingParen(i);
 
-        if (length > opts.maxLineLength || hasNestedIF) {
-          // Check if last line ends with an operator
-          const lastLine = lines.length > 0 ? lines[lines.length - 1].trim() : '';
-          const endsWithOperator = lastLine.length > 0 && /[+\-*\/%&|<>=!]$/.test(lastLine);
+        if (length > opts.maxLineLength || hasImmediateNesting) {
+          // Check if previous token was an operator
+          const prevIsOp = prevTokenIsOperator(i);
 
-          if (endsWithOperator) {
+          if (prevIsOp) {
             // Append ( to the last line with a space
             lines[lines.length - 1] = lines[lines.length - 1] + ' (';
           } else {
@@ -237,6 +282,11 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
           }
           indentLevel++;
           i++;
+
+          // Also expand the inner function if immediate nesting
+          if (hasImmediateNesting && isFunctionCall(nextIdx)) {
+            i = formatFunctionMultiline(nextIdx);
+          }
           continue;
         }
       }
@@ -258,6 +308,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
 
     // Collect current line tokens
     const lineTokens: Token[] = [];
+    const lineStartIdx = i; // Remember where this line starts
     while (i < tokens.length) {
       const t = tokens[i];
 
@@ -269,26 +320,25 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
         break;
       }
 
-      // Stop at IF if it should be expanded
-      if (t.type === TokenType.KEYWORD && t.value === 'IF') {
+      // Stop at function call if it should be expanded
+      if (isFunctionCall(i)) {
         const nextIdx = i + 1;
-        if (tokens[nextIdx]?.type === TokenType.LPAREN) {
-          const { length, hasNestedIF } = measureToClosingParen(nextIdx);
-          if (length > opts.maxLineLength || hasNestedIF) {
-            break; // Stop here, will be processed on next iteration
-          }
+        const { length, hasImmediateNesting } = measureToClosingParen(nextIdx);
+        if (length > opts.maxLineLength || hasImmediateNesting) {
+          break; // Stop here, will be processed on next iteration
         }
       }
 
-      // Stop at opening paren if it contains an IF that should be expanded
+      // Stop at opening paren if it contains a function that should be expanded
       if (t.type === TokenType.LPAREN) {
         let nextIdx = i + 1;
         while (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.NEWLINE) {
           nextIdx++;
         }
-        if (tokens[nextIdx]?.type === TokenType.KEYWORD && tokens[nextIdx].value === 'IF') {
-          const { length, hasNestedIF } = measureToClosingParen(nextIdx + 1);
-          if (length > opts.maxLineLength || hasNestedIF) {
+        if (isFunctionCall(nextIdx)) {
+          // Measure from the opening paren to include immediate nesting check
+          const { length, hasImmediateNesting } = measureToClosingParen(i);
+          if (length > opts.maxLineLength || hasImmediateNesting) {
             break; // Stop here, will be processed on next iteration
           }
         }
@@ -306,7 +356,17 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       }
 
       const lineStr = tokensToString(lineTokens);
-      lines.push(indent() + lineStr);
+
+      // Check if previous token (before this line) is an operator
+      const prevIsOp = prevTokenIsOperator(lineStartIdx);
+
+      if (prevIsOp && lineTokens[0].type !== TokenType.RPAREN) {
+        // Append to the last line with a space
+        lines[lines.length - 1] = lines[lines.length - 1] + ' ' + lineStr;
+      } else {
+        // Output on a new line
+        lines.push(indent() + lineStr);
+      }
 
       // Check if line ends with (
       if (lineTokens[lineTokens.length - 1].type === TokenType.LPAREN) {

@@ -54,6 +54,11 @@
           "type": "number",
           "default": 2,
           "description": "Number of spaces for indentation"
+        },
+        "expr.maxLineLength": {
+          "type": "number",
+          "default": 120,
+          "description": "Maximum line length before expanding functions to multiple lines"
         }
       }
     },

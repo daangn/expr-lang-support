@@ -9,10 +9,11 @@ export function activate(context: vscode.ExtensionContext) {
     provideDocumentFormattingEdits(document: vscode.TextDocument): vscode.TextEdit[] {
       const config = vscode.workspace.getConfiguration('expr');
       const indentSize = config.get<number>('indentSize', 2);
+      const maxLineLength = config.get<number>('maxLineLength', 120);
 
       try {
         const text = document.getText();
-        const formatted = format(text, { indentSize });
+        const formatted = format(text, { indentSize, maxLineLength });
 
         const fullRange = new vscode.Range(
           document.positionAt(0),
