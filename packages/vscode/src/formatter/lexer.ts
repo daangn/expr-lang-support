@@ -50,8 +50,8 @@ export function tokenize(input: string): Token[] {
       continue;
     }
 
-    // Comment
-    if (char === '#') {
+    // Comment (# or //)
+    if (char === '#' || (char === '/' && input[i + 1] === '/')) {
       const start = i;
       while (i < input.length && input[i] !== '\n') {
         i++;

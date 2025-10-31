@@ -67,8 +67,10 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
           tok.type !== TokenType.RBRACKET && // No space before ]
           tok.type !== TokenType.COMMA;      // No space before ,
       // Note: We DO want space before [, so LBRACKET is not in the exclusion list
+      // Always add space before comment if there's content before it
+      const needsSpaceBeforeComment = tok.type === TokenType.COMMENT && result.length > 0;
 
-      if (needsSpace) {
+      if (needsSpace || needsSpaceBeforeComment) {
         result += ' ';
       }
 
@@ -231,24 +233,6 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       continue;
     }
 
-    // Handle comments
-    if (token.type === TokenType.COMMENT) {
-      // Add blank line before comment if needed
-      // Don't add blank line if:
-      // - This is the first token (lastProcessedToken is null)
-      // - Previous token was a comment
-      // - Previous token was an opening paren (expansion)
-      if (lastProcessedToken &&
-          lastProcessedToken.type !== TokenType.COMMENT &&
-          lastProcessedToken.type !== TokenType.LPAREN) {
-        lines.push('');
-      }
-      lines.push(indent() + token.value);
-      lastProcessedToken = token;
-      i++;
-      continue;
-    }
-
     // Handle function calls
     if (isFunctionCall(i)) {
       const nextIdx = i + 1;
@@ -323,11 +307,15 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
     while (i < tokens.length) {
       const t = tokens[i];
 
-      // Stop at newline or comment
+      // Stop at newline
       if (t.type === TokenType.NEWLINE) {
         break;
       }
+
+      // Include comment but stop after it
       if (t.type === TokenType.COMMENT) {
+        lineTokens.push(t);
+        i++;
         break;
       }
 
@@ -361,31 +349,46 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
 
     // Output the line
     if (lineTokens.length > 0) {
-      // Check if line starts with )
-      if (lineTokens[0].type === TokenType.RPAREN) {
-        indentLevel = Math.max(0, indentLevel - 1);
-      }
+      // Check if this is a standalone comment (comment is the only token)
+      const isStandaloneComment = lineTokens.length === 1 && lineTokens[0].type === TokenType.COMMENT;
 
-      const lineStr = tokensToString(lineTokens);
-
-      // Check if previous token (before this line) is an operator
-      const prevIsOp = prevTokenIsOperator(lineStartIdx);
-
-      if (prevIsOp && lineTokens[0].type !== TokenType.RPAREN) {
-        // Append to the last line with a space
-        lines[lines.length - 1] = lines[lines.length - 1] + ' ' + lineStr;
+      if (isStandaloneComment) {
+        // Standalone comment: add blank line before if needed
+        if (lastProcessedToken &&
+            lastProcessedToken.type !== TokenType.COMMENT &&
+            lastProcessedToken.type !== TokenType.LPAREN) {
+          lines.push('');
+        }
+        lines.push(indent() + lineTokens[0].value);
+        lastProcessedToken = lineTokens[0];
       } else {
-        // Output on a new line
-        lines.push(indent() + lineStr);
-      }
+        // Regular line (possibly with inline comment)
+        // Check if line starts with )
+        if (lineTokens[0].type === TokenType.RPAREN) {
+          indentLevel = Math.max(0, indentLevel - 1);
+        }
 
-      // Check if line ends with (
-      if (lineTokens[lineTokens.length - 1].type === TokenType.LPAREN) {
-        indentLevel++;
-      }
+        const lineStr = tokensToString(lineTokens);
 
-      // Update last processed token to the last token in this line
-      lastProcessedToken = lineTokens[lineTokens.length - 1];
+        // Check if previous token (before this line) is an operator
+        const prevIsOp = prevTokenIsOperator(lineStartIdx);
+
+        if (prevIsOp && lineTokens[0].type !== TokenType.RPAREN) {
+          // Append to the last line with a space
+          lines[lines.length - 1] = lines[lines.length - 1] + ' ' + lineStr;
+        } else {
+          // Output on a new line
+          lines.push(indent() + lineStr);
+        }
+
+        // Check if line ends with (
+        if (lineTokens[lineTokens.length - 1].type === TokenType.LPAREN) {
+          indentLevel++;
+        }
+
+        // Update last processed token to the last token in this line
+        lastProcessedToken = lineTokens[lineTokens.length - 1];
+      }
     }
   }
 
