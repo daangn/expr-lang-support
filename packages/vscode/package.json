@@ -1,0 +1,108 @@
+{
+  "name": "expr-lang-support",
+  "displayName": "Expr Language Support",
+  "description": "Syntax highlighting and formatting for Expr language (.expr files)",
+  "version": "0.3.0",
+  "publisher": "daangn",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/daangn/expr-lang-support"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Formatters"
+  ],
+  "activationEvents": [
+    "onLanguage:expr"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "expr",
+        "aliases": [
+          "Expr",
+          "expr"
+        ],
+        "extensions": [
+          ".expr"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "expr",
+        "scopeName": "source.expr",
+        "path": "./syntaxes/expr.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "expr.format",
+        "title": "Format Document",
+        "category": "Expr"
+      }
+    ],
+    "configuration": {
+      "title": "Expr",
+      "properties": {
+        "expr.indentSize": {
+          "type": "number",
+          "default": 2,
+          "description": "Number of spaces for indentation"
+        }
+      }
+    },
+    "configurationDefaults": {
+      "[expr]": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "daangn.expr-lang-support"
+      }
+    },
+    "configurationDefaults": {
+      "[expr]": {
+        "editor.tokenColorCustomizations": {
+          "textMateRules": [
+            {
+              "scope": [
+                "comment.line.number-sign.expr",
+                "comment.line.double-slash.expr",
+                "comment.block.expr"
+              ],
+              "settings": {
+                "foreground": "#6A9955",
+                "fontStyle": "italic"
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "tsc -p ./",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "npm run build && vsce package --no-dependencies",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.0.0",
+    "@vscode/vsce": "^2.19.0"
+  },
+  "keywords": [
+    "expr",
+    "formatter",
+    "syntax",
+    "highlighting"
+  ],
+  "author": "",
+  "license": "MIT"
+}

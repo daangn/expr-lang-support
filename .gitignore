@@ -1,3 +1,7 @@
 node_modules
 *.vsix
 .vscode-test/
+.claude/
+.DS_Store
+dist/
+out/

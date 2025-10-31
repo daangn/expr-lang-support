@@ -3,15 +3,33 @@
   "name": "Expr",
   "scopeName": "source.expr",
   "patterns": [
-    { "include": "#comments" },
-    { "include": "#keywords" },
-    { "include": "#strings" },
-    { "include": "#numbers" },
-    { "include": "#constants" },
-    { "include": "#special-variables" },
-    { "include": "#builtin-functions" },
-    { "include": "#operators" },
-    { "include": "#punctuation" }
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#constants"
+    },
+    {
+      "include": "#special-variables"
+    },
+    {
+      "include": "#builtin-functions"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#punctuation"
+    }
   ],
   "repository": {
     "comments": {

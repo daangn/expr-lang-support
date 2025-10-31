@@ -1,0 +1,26 @@
+{
+  "name": "@expr-lang/formatter",
+  "version": "0.3.0",
+  "description": "Simple formatter for Expr language",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "expr-fmt": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "prepublishOnly": "npm run build",
+    "package": "npm pack"
+  },
+  "keywords": [
+    "expr",
+    "formatter"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  }
+}

@@ -1,12 +1,10 @@
 .vscode/**
 .vscode-test/**
 .gitignore
-.claude/**
 src/**
-node_modules/**
 tsconfig.json
 *.vsix
 .eslintrc.json
 **/*.map
-example.expr
-mathexpr.expr
+**/.DS_Store
+node_modules/**

@@ -1,48 +1,36 @@
 {
-  "name": "expr-lang-syntax-highlighter",
-  "displayName": "Expr Language Syntax Highlighter",
-  "description": "Syntax highlighting for Expr language (.expr files)",
-  "version": "0.1.0",
-  "engines": {
-    "vscode": "^1.80.0"
-  },
-  "categories": [
-    "Programming Languages"
+  "name": "expr-lang-support",
+  "version": "0.2.0",
+  "description": "Language support for Expr language (https://expr-lang.org)",
+  "private": true,
+  "workspaces": [
+    "packages/*"
   ],
-  "contributes": {
-    "languages": [
-      {
-        "id": "expr",
-        "aliases": ["Expr", "expr"],
-        "extensions": [".expr"],
-        "configuration": "./language-configuration.json"
-      }
-    ],
-    "grammars": [
-      {
-        "language": "expr",
-        "scopeName": "source.expr",
-        "path": "./syntaxes/expr.tmLanguage.json"
-      }
-    ],
-    "configurationDefaults": {
-      "[expr]": {
-        "editor.tokenColorCustomizations": {
-          "textMateRules": [
-            {
-              "scope": [
-                "comment.line.number-sign.expr",
-                "comment.line.double-slash.expr",
-                "comment.block.expr"
-              ],
-              "settings": {
-                "foreground": "#6A9955",
-                "fontStyle": "italic"
-              }
-            }
-          ]
-        }
-      }
-    }
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "build:formatter": "npm run build -w packages/formatter",
+    "build:vscode": "npm run build -w packages/vscode",
+    "watch:formatter": "npm run watch -w packages/formatter",
+    "watch:vscode": "npm run watch -w packages/vscode",
+    "package": "npm run package:formatter && npm run package:vscode",
+    "package:formatter": "npm run package -w packages/formatter",
+    "package:vscode": "npm run package -w packages/vscode",
+    "clean": "rm -rf packages/*/dist packages/*/out packages/*/node_modules node_modules *.tgz *.vsix"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/daangn/expr-lang-support"
+  },
+  "keywords": [
+    "expr",
+    "formatter",
+    "syntax",
+    "highlighting",
+    "vscode"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.0.0"
   }
 }
