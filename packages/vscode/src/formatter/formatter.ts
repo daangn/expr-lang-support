@@ -19,6 +19,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
   let indentLevel = 0;
   let i = 0;
   let lastProcessedToken: Token | null = null;
+  let pendingBlankLines = 0; // Track blank lines to preserve
 
   const indent = () => ' '.repeat(indentLevel * opts.indentSize);
 
@@ -154,6 +155,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
     // Collect arguments separated by commas at depth 1
     let depth = 1;
     let currentArg: Token[] = [];
+    let consecutiveNewlines = 0; // Track consecutive newlines for blank line preservation
 
     while (idx < tokens.length && depth > 0) {
       const tok = tokens[idx];
@@ -166,27 +168,65 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
             lines.push(indent() + tokensToString(currentArg));
           }
           indentLevel--;
-          lines.push(indent() + ')');
+
+          // Check if there's an inline comment immediately after the closing paren (no newline in between)
+          let closingLine = indent() + ')';
+          let nextIdx = idx + 1;
+          // Only attach comment if it's the immediate next token (not after newline)
+          if (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.COMMENT) {
+            // Append inline comment to closing paren
+            closingLine += ' ' + tokens[nextIdx].value;
+            lines.push(closingLine);
+            return nextIdx + 1; // Skip past the comment
+          }
+
+          lines.push(closingLine);
           return idx + 1;
         } else {
           currentArg.push(tok);
+          consecutiveNewlines = 0;
         }
       } else if (tok.type === TokenType.LPAREN) {
         depth++;
         currentArg.push(tok);
+        consecutiveNewlines = 0;
       } else if (tok.type === TokenType.COMMA && depth === 1) {
         // Argument separator at top level
         if (currentArg.length > 0) {
-          lines.push(indent() + tokensToString(currentArg) + ',');
+          let line = indent() + tokensToString(currentArg) + ',';
+
+          // Check if next token is a comment (inline comment after comma)
+          let nextIdx = idx + 1;
+          if (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.COMMENT) {
+            // Append inline comment
+            line += ' ' + tokens[nextIdx].value;
+            idx = nextIdx; // Skip the comment token in next iteration
+          }
+
+          lines.push(line);
         }
         currentArg = [];
+        consecutiveNewlines = 0;
       } else if (tok.type === TokenType.COMMENT) {
-        // Comment inside function
-        if (currentArg.length > 0) {
-          lines.push(indent() + tokensToString(currentArg));
-          currentArg = [];
+        // Comment inside function - check if it's inline or standalone
+        // If there were newlines before, it's standalone
+        if (consecutiveNewlines > 0 || currentArg.length === 0) {
+          // Standalone comment: output current arg first if exists
+          if (currentArg.length > 0) {
+            lines.push(indent() + tokensToString(currentArg));
+            currentArg = [];
+          }
+          // Add blank lines if there were multiple newlines
+          const blankLines = Math.max(0, consecutiveNewlines - 1);
+          for (let j = 0; j < blankLines; j++) {
+            lines.push('');
+          }
+          lines.push(indent() + tok.value);
+        } else {
+          // Inline comment: append to current argument
+          currentArg.push(tok);
         }
-        lines.push(indent() + tok.value);
+        consecutiveNewlines = 0;
       } else if (isFunctionCall(idx)) {
         // Nested function call - check if it needs expansion
         const nestedNextIdx = idx + 1;
@@ -213,8 +253,11 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
           // Nested function doesn't need expansion - treat it as part of current argument
           currentArg.push(tok);
         }
-      } else if (tok.type !== TokenType.NEWLINE) {
+      } else if (tok.type === TokenType.NEWLINE) {
+        consecutiveNewlines++;
+      } else {
         currentArg.push(tok);
+        consecutiveNewlines = 0;
       }
 
       idx++;
@@ -227,9 +270,17 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
   while (i < tokens.length) {
     const token = tokens[i];
 
-    // Skip newlines
+    // Track consecutive newlines for blank line preservation
     if (token.type === TokenType.NEWLINE) {
-      i++;
+      let newlineCount = 0;
+      while (i < tokens.length && tokens[i].type === TokenType.NEWLINE) {
+        newlineCount++;
+        i++;
+      }
+      // Multiple newlines mean blank lines (newlineCount - 1 blank lines)
+      if (newlineCount > 1) {
+        pendingBlankLines += newlineCount - 1;
+      }
       continue;
     }
 
@@ -353,16 +404,32 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       const isStandaloneComment = lineTokens.length === 1 && lineTokens[0].type === TokenType.COMMENT;
 
       if (isStandaloneComment) {
-        // Standalone comment: add blank line before if needed
-        if (lastProcessedToken &&
+        // Output pending blank lines first
+        for (let j = 0; j < pendingBlankLines; j++) {
+          lines.push('');
+        }
+        pendingBlankLines = 0;
+
+        // Standalone comment: add blank line before if needed (only if no pending blank lines were added)
+        if (lines.length > 0 && lastProcessedToken &&
             lastProcessedToken.type !== TokenType.COMMENT &&
             lastProcessedToken.type !== TokenType.LPAREN) {
-          lines.push('');
+          // Only add if we didn't just add blank lines
+          const lastLine = lines[lines.length - 1];
+          if (lastLine.trim() !== '') {
+            lines.push('');
+          }
         }
         lines.push(indent() + lineTokens[0].value);
         lastProcessedToken = lineTokens[0];
       } else {
         // Regular line (possibly with inline comment)
+        // Output pending blank lines first
+        for (let j = 0; j < pendingBlankLines; j++) {
+          lines.push('');
+        }
+        pendingBlankLines = 0;
+
         // Check if line starts with )
         if (lineTokens[0].type === TokenType.RPAREN) {
           indentLevel = Math.max(0, indentLevel - 1);
