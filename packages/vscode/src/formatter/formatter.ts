@@ -18,6 +18,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
   const lines: string[] = [];
   let indentLevel = 0;
   let i = 0;
+  let lastProcessedToken: Token | null = null;
 
   const indent = () => ' '.repeat(indentLevel * opts.indentSize);
 
@@ -233,13 +234,17 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
     // Handle comments
     if (token.type === TokenType.COMMENT) {
       // Add blank line before comment if needed
-      if (lines.length > 0) {
-        const lastLine = lines[lines.length - 1].trim();
-        if (lastLine && !lastLine.startsWith('#')) {
-          lines.push('');
-        }
+      // Don't add blank line if:
+      // - This is the first token (lastProcessedToken is null)
+      // - Previous token was a comment
+      // - Previous token was an opening paren (expansion)
+      if (lastProcessedToken &&
+          lastProcessedToken.type !== TokenType.COMMENT &&
+          lastProcessedToken.type !== TokenType.LPAREN) {
+        lines.push('');
       }
       lines.push(indent() + token.value);
+      lastProcessedToken = token;
       i++;
       continue;
     }
@@ -252,6 +257,8 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       // Expand if long or has immediate nesting
       if (length > opts.maxLineLength || hasImmediateNesting) {
         i = formatFunctionMultiline(i);
+        // After multiline function, the last processed token is RPAREN
+        if (i > 0) lastProcessedToken = tokens[i - 1];
         continue;
       }
       // If we don't expand, fall through to normal line processing
@@ -281,11 +288,14 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
             lines.push(indent() + '(');
           }
           indentLevel++;
+          lastProcessedToken = token; // LPAREN
           i++;
 
           // Also expand the inner function if immediate nesting
           if (hasImmediateNesting && isFunctionCall(nextIdx)) {
             i = formatFunctionMultiline(nextIdx);
+            // After multiline function, the last processed token is RPAREN
+            if (i > 0) lastProcessedToken = tokens[i - 1];
           }
           continue;
         }
@@ -300,6 +310,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
         if (prevLine && prevLine.trim().endsWith(')')) {
           indentLevel--;
           lines.push(indent() + ')');
+          lastProcessedToken = token; // RPAREN
           i++;
           continue;
         }
@@ -372,6 +383,9 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       if (lineTokens[lineTokens.length - 1].type === TokenType.LPAREN) {
         indentLevel++;
       }
+
+      // Update last processed token to the last token in this line
+      lastProcessedToken = lineTokens[lineTokens.length - 1];
     }
   }
 
