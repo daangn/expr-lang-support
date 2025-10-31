@@ -213,6 +213,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
           // Process content inside paren line by line
           let parenDepth = 1;
           let parenLine: Token[] = [];
+          let parenConsecutiveNewlines = 0;
 
           while (idx < tokens.length && parenDepth > 0) {
             const t = tokens[idx];
@@ -220,6 +221,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
             if (t.type === TokenType.LPAREN) {
               parenDepth++;
               parenLine.push(t);
+              parenConsecutiveNewlines = 0;
             } else if (t.type === TokenType.RPAREN) {
               parenDepth--;
               if (parenDepth === 0) {
@@ -234,15 +236,51 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
                 break;
               } else {
                 parenLine.push(t);
+                parenConsecutiveNewlines = 0;
               }
             } else if (t.type === TokenType.NEWLINE) {
-              // Output current paren line
+              // Output current paren line if it has content
               if (parenLine.length > 0) {
                 lines.push(indent() + tokensToString(parenLine));
                 parenLine = [];
               }
+              parenConsecutiveNewlines++;
+            } else if (t.type === TokenType.COMMENT) {
+              // Check if this is a standalone comment (has newlines before it)
+              if (parenConsecutiveNewlines > 0 || parenLine.length === 0) {
+                // Standalone comment - output current line first if exists
+                if (parenLine.length > 0) {
+                  lines.push(indent() + tokensToString(parenLine));
+                  parenLine = [];
+                }
+                // Always add at least 1 blank line before standalone comments
+                const blankLines = Math.max(1, parenConsecutiveNewlines - 1);
+                for (let j = 0; j < blankLines; j++) {
+                  lines.push('');
+                }
+                // Output the comment
+                lines.push(indent() + t.value);
+              } else {
+                // Inline comment - add to current line
+                parenLine.push(t);
+              }
+              parenConsecutiveNewlines = 0;
             } else {
+              // Regular token - output blank lines if needed
+              if (parenConsecutiveNewlines > 1) {
+                // Output current line first if exists
+                if (parenLine.length > 0) {
+                  lines.push(indent() + tokensToString(parenLine));
+                  parenLine = [];
+                }
+                // Add blank lines
+                const blankLines = parenConsecutiveNewlines - 1;
+                for (let j = 0; j < blankLines; j++) {
+                  lines.push('');
+                }
+              }
               parenLine.push(t);
+              parenConsecutiveNewlines = 0;
             }
             idx++;
           }
@@ -284,8 +322,8 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
             lines.push(indent() + tokensToString(currentArg));
             currentArg = [];
           }
-          // Add blank lines if there were multiple newlines
-          const blankLines = Math.max(0, consecutiveNewlines - 1);
+          // Always add at least 1 blank line before standalone comments
+          const blankLines = Math.max(1, consecutiveNewlines - 1);
           for (let j = 0; j < blankLines; j++) {
             lines.push('');
           }
