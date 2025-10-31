@@ -99,11 +99,12 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
   };
 
   // Measure content length until closing paren
-  const measureToClosingParen = (startIdx: number): { length: number; hasImmediateNesting: boolean; endIdx: number } => {
+  const measureToClosingParen = (startIdx: number): { length: number; hasImmediateNesting: boolean; hasNewlines: boolean; endIdx: number } => {
     let depth = 0;
     let j = startIdx;
     const collectedTokens: Token[] = [];
     const immediateNesting = hasImmediateNesting(startIdx);
+    let foundNewline = false;
 
     for (; j < tokens.length; j++) {
       const t = tokens[j];
@@ -116,16 +117,18 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
           // Found matching closing paren - include it and return
           collectedTokens.push(t);
           const length = tokensToString(collectedTokens).length;
-          return { length, hasImmediateNesting: immediateNesting, endIdx: j };
+          return { length, hasImmediateNesting: immediateNesting, hasNewlines: foundNewline, endIdx: j };
         }
       }
-      if (t.type !== TokenType.NEWLINE) {
+      if (t.type === TokenType.NEWLINE) {
+        foundNewline = true;
+      } else {
         collectedTokens.push(t);
       }
     }
 
     const length = tokensToString(collectedTokens).length;
-    return { length, hasImmediateNesting: immediateNesting, endIdx: j };
+    return { length, hasImmediateNesting: immediateNesting, hasNewlines: foundNewline, endIdx: j };
   };
 
   // Format function call on multiple lines
@@ -156,9 +159,11 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
     let depth = 1;
     let currentArg: Token[] = [];
     let consecutiveNewlines = 0; // Track consecutive newlines for blank line preservation
+    let skipIncrement = false; // Flag to skip idx++ after multiline paren processing
 
     while (idx < tokens.length && depth > 0) {
       const tok = tokens[idx];
+      skipIncrement = false;
 
       if (tok.type === TokenType.RPAREN) {
         depth--;
@@ -188,6 +193,69 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
         }
       } else if (tok.type === TokenType.LPAREN) {
         depth++;
+
+        // Check if this paren has multiline content
+        const { hasNewlines: parenHasNewlines } = measureToClosingParen(idx);
+
+        if (parenHasNewlines && depth === 2) {
+          // This is a multiline paren inside function argument
+          // Output current arg content before the paren if exists, including the opening paren
+          currentArg.push(tok);
+
+          if (currentArg.length > 0) {
+            lines.push(indent() + tokensToString(currentArg));
+            currentArg = [];
+          }
+
+          indentLevel++;
+          idx++; // Move past the LPAREN
+
+          // Process content inside paren line by line
+          let parenDepth = 1;
+          let parenLine: Token[] = [];
+
+          while (idx < tokens.length && parenDepth > 0) {
+            const t = tokens[idx];
+
+            if (t.type === TokenType.LPAREN) {
+              parenDepth++;
+              parenLine.push(t);
+            } else if (t.type === TokenType.RPAREN) {
+              parenDepth--;
+              if (parenDepth === 0) {
+                // Output last line if exists
+                if (parenLine.length > 0) {
+                  lines.push(indent() + tokensToString(parenLine));
+                }
+                indentLevel--;
+                // Add closing paren to currentArg so it combines with rest of expression
+                // e.g., ") > 0.0" will be on one line
+                currentArg.push(t);
+                break;
+              } else {
+                parenLine.push(t);
+              }
+            } else if (t.type === TokenType.NEWLINE) {
+              // Output current paren line
+              if (parenLine.length > 0) {
+                lines.push(indent() + tokensToString(parenLine));
+                parenLine = [];
+              }
+            } else {
+              parenLine.push(t);
+            }
+            idx++;
+          }
+
+          // Decrease depth back to 1 since we handled both opening and closing paren
+          depth--;
+          consecutiveNewlines = 0;
+          // idx points to RPAREN, move past it and skip the loop's increment
+          idx++;
+          skipIncrement = true;
+          continue;
+        }
+
         currentArg.push(tok);
         consecutiveNewlines = 0;
       } else if (tok.type === TokenType.COMMA && depth === 1) {
@@ -230,9 +298,9 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       } else if (isFunctionCall(idx)) {
         // Nested function call - check if it needs expansion
         const nestedNextIdx = idx + 1;
-        const { length: nestedLength, hasImmediateNesting: nestedHasImmediate } = measureToClosingParen(nestedNextIdx);
+        const { length: nestedLength, hasImmediateNesting: nestedHasImmediate, hasNewlines: nestedHasNewlines } = measureToClosingParen(nestedNextIdx);
 
-        if (nestedLength > opts.maxLineLength || nestedHasImmediate) {
+        if (nestedLength > opts.maxLineLength || nestedHasImmediate || nestedHasNewlines) {
           // Nested function needs expansion
           if (currentArg.length > 0) {
             lines.push(indent() + tokensToString(currentArg));
@@ -260,7 +328,9 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
         consecutiveNewlines = 0;
       }
 
-      idx++;
+      if (!skipIncrement) {
+        idx++;
+      }
     }
 
     return idx;
@@ -287,10 +357,10 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
     // Handle function calls
     if (isFunctionCall(i)) {
       const nextIdx = i + 1;
-      const { length, hasImmediateNesting } = measureToClosingParen(nextIdx);
+      const { length, hasImmediateNesting, hasNewlines } = measureToClosingParen(nextIdx);
 
-      // Expand if long or has immediate nesting
-      if (length > opts.maxLineLength || hasImmediateNesting) {
+      // Expand if long, has immediate nesting, or was already multiline
+      if (length > opts.maxLineLength || hasImmediateNesting || hasNewlines) {
         i = formatFunctionMultiline(i);
         // After multiline function, the last processed token is RPAREN
         if (i > 0) lastProcessedToken = tokens[i - 1];
@@ -301,39 +371,39 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
 
     // Handle opening paren - check if we should expand
     if (token.type === TokenType.LPAREN) {
+      // Measure from the opening paren to check if expansion is needed
+      const { length, hasImmediateNesting, hasNewlines } = measureToClosingParen(i);
+
       // Look ahead to see if there's a function call inside
       let nextIdx = i + 1;
       while (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.NEWLINE) {
         nextIdx++;
       }
+      const hasFunctionInside = isFunctionCall(nextIdx);
 
-      if (isFunctionCall(nextIdx)) {
-        // Measure from the opening paren to include immediate nesting check
-        const { length, hasImmediateNesting } = measureToClosingParen(i);
+      // Expand if: long, has immediate nesting, has newlines (already multiline), or contains function call that needs expansion
+      if (length > opts.maxLineLength || hasImmediateNesting || hasNewlines || (hasFunctionInside && length > opts.maxLineLength)) {
+        // Check if previous token was an operator
+        const prevIsOp = prevTokenIsOperator(i);
 
-        if (length > opts.maxLineLength || hasImmediateNesting) {
-          // Check if previous token was an operator
-          const prevIsOp = prevTokenIsOperator(i);
-
-          if (prevIsOp) {
-            // Append ( to the last line with a space
-            lines[lines.length - 1] = lines[lines.length - 1] + ' (';
-          } else {
-            // Expand the paren on a new line
-            lines.push(indent() + '(');
-          }
-          indentLevel++;
-          lastProcessedToken = token; // LPAREN
-          i++;
-
-          // Also expand the inner function if immediate nesting
-          if (hasImmediateNesting && isFunctionCall(nextIdx)) {
-            i = formatFunctionMultiline(nextIdx);
-            // After multiline function, the last processed token is RPAREN
-            if (i > 0) lastProcessedToken = tokens[i - 1];
-          }
-          continue;
+        if (prevIsOp) {
+          // Append ( to the last line with a space
+          lines[lines.length - 1] = lines[lines.length - 1] + ' (';
+        } else {
+          // Expand the paren on a new line
+          lines.push(indent() + '(');
         }
+        indentLevel++;
+        lastProcessedToken = token; // LPAREN
+        i++;
+
+        // Also expand the inner function if immediate nesting
+        if (hasImmediateNesting && hasFunctionInside) {
+          i = formatFunctionMultiline(nextIdx);
+          // After multiline function, the last processed token is RPAREN
+          if (i > 0) lastProcessedToken = tokens[i - 1];
+        }
+        continue;
       }
     }
 
@@ -373,8 +443,8 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       // Stop at function call if it should be expanded
       if (isFunctionCall(i)) {
         const nextIdx = i + 1;
-        const { length, hasImmediateNesting } = measureToClosingParen(nextIdx);
-        if (length > opts.maxLineLength || hasImmediateNesting) {
+        const { length, hasImmediateNesting, hasNewlines } = measureToClosingParen(nextIdx);
+        if (length > opts.maxLineLength || hasImmediateNesting || hasNewlines) {
           break; // Stop here, will be processed on next iteration
         }
       }
@@ -387,8 +457,8 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
         }
         if (isFunctionCall(nextIdx)) {
           // Measure from the opening paren to include immediate nesting check
-          const { length, hasImmediateNesting } = measureToClosingParen(i);
-          if (length > opts.maxLineLength || hasImmediateNesting) {
+          const { length, hasImmediateNesting, hasNewlines } = measureToClosingParen(i);
+          if (length > opts.maxLineLength || hasImmediateNesting || hasNewlines) {
             break; // Stop here, will be processed on next iteration
           }
         }
