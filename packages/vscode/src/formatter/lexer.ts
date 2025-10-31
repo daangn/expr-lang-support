@@ -23,7 +23,7 @@ export interface Token {
 }
 
 const KEYWORDS = new Set(['IF', 'in', 'and', 'or', 'not', 'let']);
-const OPERATORS = ['==', '!=', '>=', '<=', '>', '<', '&&', '||', '+', '-', '*', '/', '%', '**'];
+const OPERATORS = ['==', '!=', '>=', '<=', '>', '<', '&&', '||', '**', '+', '-', '*', '/', '%'];
 
 export function tokenize(input: string): Token[] {
   const tokens: Token[] = [];
