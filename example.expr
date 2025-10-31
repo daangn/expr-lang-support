@@ -1,0 +1,141 @@
+# Example Expr language file
+// You can also use // for comments
+/* This demonstrates various syntax features */
+
+# Variable declaration
+let x = 10
+let name = "World"
+
+// Boolean and nil
+let isActive = true
+let value = nil
+
+// Numbers in different formats
+let decimal = 42
+let hex = 0x2A
+let octal = 0o52
+let binary = 0b101010
+let floatNum = 3.14
+let shortFloat = .5
+
+// String types
+let singleQuote = 'Hello'
+let doubleQuote = "Hello"
+let rawString = `Multi
+line
+string`
+let escaped = "Line 1\nLine 2\tTabbed"
+let unicode = "\u0041"
+
+// Collections
+let array = [1, 2, 3, 4, 5]
+let mapObj = {a: 1, b: 2, c: 3}
+
+// Arithmetic operators
+let sum = 10 + 5
+let diff = 10 - 5
+let product = 10 * 5
+let quotient = 10 / 5
+let remainder = 10 % 3
+let power = 2 ** 3
+
+// Comparison operators
+10 == 10
+10 != 5
+10 < 20
+10 > 5
+10 <= 10
+10 >= 5
+
+// Logical operators
+true and false
+true or false
+not true
+true && false
+true || false
+!false
+
+// Ternary and nil coalescing
+let result = x > 5 ? "big" : "small"
+let default = value ?? "default"
+
+// Conditional
+if x > 5 {
+  "big"
+} else {
+  "small"
+}
+
+// Membership operators
+"test" in ["test", "demo"]
+array[0]
+mapObj.a
+mapObj?.b
+
+// String operations
+"hello" + " world"
+"hello world" contains "world"
+"hello" startsWith "he"
+"hello" endsWith "lo"
+"test@example.com" matches "^[a-z]+@[a-z]+\\.[a-z]+$"
+
+// Range and slice
+1..10
+array[1:3]
+
+// Built-in functions - String
+trim("  hello  ")
+upper("hello")
+lower("HELLO")
+split("a,b,c", ",")
+replace("hello", "l", "L")
+
+// Built-in functions - Array
+filter(array, # > 2)
+map(array, # * 2)
+all(array, # > 0)
+any(array, # > 10)
+reduce(array, #acc + #, 0)
+sum(array)
+first(array)
+last(array)
+sort(array)
+
+// Built-in functions - Map
+keys(mapObj)
+values(mapObj)
+
+// Built-in functions - Date/Time
+now()
+duration("1h30m")
+
+// Built-in functions - Numeric
+max(array)
+min(array)
+abs(-10)
+ceil(3.2)
+floor(3.8)
+round(3.5)
+
+// Built-in functions - Type conversion
+type(x)
+int("42")
+float("3.14")
+string(42)
+toJSON(mapObj)
+fromJSON('{"a":1}')
+
+// Built-in functions - Misc
+len(array)
+get(mapObj, "a")
+
+// Pipe operator
+array | filter(# > 2) | map(# * 2) | sum()
+
+// Environment variable
+$env.HOME
+$env["PATH"]
+
+// Predicate with special variables
+filter(array, # > 5)
+reduce(array, #acc + # * #index, 0)

@@ -1,0 +1,48 @@
+{
+  "name": "expr-lang-syntax-highlighter",
+  "displayName": "Expr Language Syntax Highlighter",
+  "description": "Syntax highlighting for Expr language (.expr files)",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "expr",
+        "aliases": ["Expr", "expr"],
+        "extensions": [".expr"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "expr",
+        "scopeName": "source.expr",
+        "path": "./syntaxes/expr.tmLanguage.json"
+      }
+    ],
+    "configurationDefaults": {
+      "[expr]": {
+        "editor.tokenColorCustomizations": {
+          "textMateRules": [
+            {
+              "scope": [
+                "comment.line.number-sign.expr",
+                "comment.line.double-slash.expr",
+                "comment.block.expr"
+              ],
+              "settings": {
+                "foreground": "#6A9955",
+                "fontStyle": "italic"
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

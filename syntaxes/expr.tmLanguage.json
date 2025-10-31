@@ -1,0 +1,202 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Expr",
+  "scopeName": "source.expr",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#keywords" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#constants" },
+    { "include": "#special-variables" },
+    { "include": "#builtin-functions" },
+    { "include": "#operators" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.expr",
+          "match": "#.*$"
+        },
+        {
+          "name": "comment.line.double-slash.expr",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.expr",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.expr",
+          "match": "\\b(if|else)\\b"
+        },
+        {
+          "name": "keyword.other.expr",
+          "match": "\\b(let|in)\\b"
+        },
+        {
+          "name": "keyword.operator.logical.expr",
+          "match": "\\b(and|or|not|contains|startsWith|endsWith|matches)\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.expr",
+          "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "constant.language.null.expr",
+          "match": "\\bnil\\b"
+        }
+      ]
+    },
+    "special-variables": {
+      "patterns": [
+        {
+          "name": "variable.language.env.expr",
+          "match": "\\$env\\b"
+        },
+        {
+          "name": "variable.language.special.expr",
+          "match": "#(acc|index)\\b"
+        },
+        {
+          "name": "variable.language.predicate.expr",
+          "match": "#\\b"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.backtick.expr",
+          "begin": "`",
+          "end": "`"
+        },
+        {
+          "name": "string.quoted.double.expr",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.expr",
+              "match": "\\\\(n|t|r|\\\\|\"|u[0-9a-fA-F]{4})"
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.expr",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.expr",
+              "match": "\\\\(n|t|r|\\\\|'|u[0-9a-fA-F]{4})"
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.expr",
+          "match": "\\b0x[0-9a-fA-F]+\\b"
+        },
+        {
+          "name": "constant.numeric.octal.expr",
+          "match": "\\b0o[0-7]+\\b"
+        },
+        {
+          "name": "constant.numeric.binary.expr",
+          "match": "\\b0b[01]+\\b"
+        },
+        {
+          "name": "constant.numeric.float.expr",
+          "match": "\\b([0-9]+\\.[0-9]+|\\.[0-9]+)\\b"
+        },
+        {
+          "name": "constant.numeric.integer.expr",
+          "match": "\\b[0-9]+\\b"
+        }
+      ]
+    },
+    "builtin-functions": {
+      "patterns": [
+        {
+          "name": "support.function.builtin.expr",
+          "match": "\\b(trim|trimPrefix|trimSuffix|upper|lower|split|splitAfter|replace|repeat|indexOf|lastIndexOf|hasPrefix|hasSuffix|all|any|one|none|map|filter|find|findIndex|findLast|findLastIndex|groupBy|count|concat|flatten|uniq|join|reduce|sum|mean|median|first|last|take|reverse|sort|sortBy|keys|values|now|duration|date|timezone|max|min|abs|ceil|floor|round|type|int|float|string|toJSON|fromJSON|toBase64|fromBase64|toPairs|fromPairs|bitand|bitor|bitxor|bitnand|bitnot|bitshl|bitshr|bitushr|len|get)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.arithmetic.expr",
+          "match": "(\\+|-|\\*\\*|\\*|/|%|\\^)"
+        },
+        {
+          "name": "keyword.operator.comparison.expr",
+          "match": "(==|!=|<=|>=|<|>)"
+        },
+        {
+          "name": "keyword.operator.logical.expr",
+          "match": "(&&|\\|\\||!)"
+        },
+        {
+          "name": "keyword.operator.ternary.expr",
+          "match": "(\\?|:)"
+        },
+        {
+          "name": "keyword.operator.nil-coalescing.expr",
+          "match": "\\?\\?"
+        },
+        {
+          "name": "keyword.operator.range.expr",
+          "match": "\\.\\."
+        },
+        {
+          "name": "keyword.operator.optional-chaining.expr",
+          "match": "\\?\\."
+        },
+        {
+          "name": "keyword.operator.pipe.expr",
+          "match": "\\|"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.separator.comma.expr",
+          "match": ","
+        },
+        {
+          "name": "punctuation.accessor.expr",
+          "match": "\\."
+        },
+        {
+          "name": "punctuation.section.brackets.expr",
+          "match": "[\\[\\]]"
+        },
+        {
+          "name": "punctuation.section.braces.expr",
+          "match": "[{}]"
+        },
+        {
+          "name": "punctuation.section.parens.expr",
+          "match": "[()]"
+        }
+      ]
+    }
+  }
+}
