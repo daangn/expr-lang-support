@@ -27,12 +27,16 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       const tok = toks[i];
       if (tok.type === TokenType.NEWLINE) continue;
 
+      // Check if previous token was an operator
+      const prevTok = i > 0 ? toks[i - 1] : null;
+      const prevIsOperator = prevTok?.type === TokenType.OPERATOR;
+
       // Add space before token if needed
       const needsSpace = result.length > 0 &&
           result[result.length - 1] !== '(' &&
           result[result.length - 1] !== '[' &&
           result[result.length - 1] !== ' ' &&
-          tok.type !== TokenType.LPAREN &&  // No space before (
+          (tok.type !== TokenType.LPAREN || prevIsOperator) &&  // Space before ( if after operator
           tok.type !== TokenType.RPAREN &&  // No space before )
           tok.type !== TokenType.RBRACKET && // No space before ]
           tok.type !== TokenType.COMMA;      // No space before ,
@@ -220,8 +224,17 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
         const { length, hasNestedIF } = measureToClosingParen(nextIdx + 1);
 
         if (length > opts.maxLineLength || hasNestedIF) {
-          // Expand the paren
-          lines.push(indent() + '(');
+          // Check if last line ends with an operator
+          const lastLine = lines.length > 0 ? lines[lines.length - 1].trim() : '';
+          const endsWithOperator = lastLine.length > 0 && /[+\-*\/%&|<>=!]$/.test(lastLine);
+
+          if (endsWithOperator) {
+            // Append ( to the last line with a space
+            lines[lines.length - 1] = lines[lines.length - 1] + ' (';
+          } else {
+            // Expand the paren on a new line
+            lines.push(indent() + '(');
+          }
           indentLevel++;
           i++;
           continue;
