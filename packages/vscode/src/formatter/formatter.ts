@@ -160,6 +160,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
     let currentArg: Token[] = [];
     let consecutiveNewlines = 0; // Track consecutive newlines for blank line preservation
     let skipIncrement = false; // Flag to skip idx++ after multiline paren processing
+    let lastOutputWasComment = false; // Track if last output line was a comment
 
     while (idx < tokens.length && depth > 0) {
       const tok = tokens[idx];
@@ -171,6 +172,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
           // End of function - output last argument
           if (currentArg.length > 0) {
             lines.push(indent() + tokensToString(currentArg));
+            lastOutputWasComment = false;
           }
           indentLevel--;
 
@@ -182,10 +184,12 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
             // Append inline comment to closing paren
             closingLine += ' ' + tokens[nextIdx].value;
             lines.push(closingLine);
+            lastOutputWasComment = false;
             return nextIdx + 1; // Skip past the comment
           }
 
           lines.push(closingLine);
+          lastOutputWasComment = false;
           return idx + 1;
         } else {
           currentArg.push(tok);
@@ -214,6 +218,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
           let parenDepth = 1;
           let parenLine: Token[] = [];
           let parenConsecutiveNewlines = 0;
+          let parenLastOutputWasComment = false;
 
           while (idx < tokens.length && parenDepth > 0) {
             const t = tokens[idx];
@@ -228,6 +233,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
                 // Output last line if exists
                 if (parenLine.length > 0) {
                   lines.push(indent() + tokensToString(parenLine));
+                  parenLastOutputWasComment = false;
                 }
                 indentLevel--;
                 // Add closing paren to currentArg so it combines with rest of expression
@@ -243,6 +249,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
               if (parenLine.length > 0) {
                 lines.push(indent() + tokensToString(parenLine));
                 parenLine = [];
+                parenLastOutputWasComment = false;
               }
               parenConsecutiveNewlines++;
             } else if (t.type === TokenType.COMMENT) {
@@ -252,14 +259,18 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
                 if (parenLine.length > 0) {
                   lines.push(indent() + tokensToString(parenLine));
                   parenLine = [];
+                  parenLastOutputWasComment = false;
                 }
-                // Always add at least 1 blank line before standalone comments
-                const blankLines = Math.max(1, parenConsecutiveNewlines - 1);
-                for (let j = 0; j < blankLines; j++) {
-                  lines.push('');
+                // Add blank line only if last output was NOT a comment
+                if (!parenLastOutputWasComment) {
+                  const blankLines = Math.max(1, parenConsecutiveNewlines - 1);
+                  for (let j = 0; j < blankLines; j++) {
+                    lines.push('');
+                  }
                 }
                 // Output the comment
                 lines.push(indent() + t.value);
+                parenLastOutputWasComment = true;
               } else {
                 // Inline comment - add to current line
                 parenLine.push(t);
@@ -272,6 +283,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
                 if (parenLine.length > 0) {
                   lines.push(indent() + tokensToString(parenLine));
                   parenLine = [];
+                  parenLastOutputWasComment = false;
                 }
                 // Add blank lines
                 const blankLines = parenConsecutiveNewlines - 1;
@@ -281,6 +293,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
               }
               parenLine.push(t);
               parenConsecutiveNewlines = 0;
+              parenLastOutputWasComment = false;
             }
             idx++;
           }
@@ -310,6 +323,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
           }
 
           lines.push(line);
+          lastOutputWasComment = false;
         }
         currentArg = [];
         consecutiveNewlines = 0;
@@ -321,13 +335,17 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
           if (currentArg.length > 0) {
             lines.push(indent() + tokensToString(currentArg));
             currentArg = [];
+            lastOutputWasComment = false;
           }
-          // Always add at least 1 blank line before standalone comments
-          const blankLines = Math.max(1, consecutiveNewlines - 1);
-          for (let j = 0; j < blankLines; j++) {
-            lines.push('');
+          // Add blank line only if last output was NOT a comment
+          if (!lastOutputWasComment) {
+            const blankLines = Math.max(1, consecutiveNewlines - 1);
+            for (let j = 0; j < blankLines; j++) {
+              lines.push('');
+            }
           }
           lines.push(indent() + tok.value);
+          lastOutputWasComment = true;
         } else {
           // Inline comment: append to current argument
           currentArg.push(tok);
@@ -343,8 +361,10 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
           if (currentArg.length > 0) {
             lines.push(indent() + tokensToString(currentArg));
             currentArg = [];
+            lastOutputWasComment = false;
           }
           idx = formatFunctionMultiline(idx);
+          lastOutputWasComment = false;
 
           // Check if there's a comma after the nested function
           if (idx < tokens.length && tokens[idx].type === TokenType.COMMA && depth === 1) {
