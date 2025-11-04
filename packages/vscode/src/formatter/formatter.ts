@@ -56,10 +56,20 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
 
       // Check if previous token was an operator or minus sign
       const prevTok = i > 0 ? toks[i - 1] : null;
+
+      // Check if this is unary minus (negative number) vs binary minus (subtraction)
+      // Unary minus: after operator, lparen, comma, lbracket, or at start
+      // Binary minus: after number, identifier, rparen, rbracket
       const prevIsMinus = prevTok?.type === TokenType.OPERATOR && prevTok?.value === '-';
+      const isUnaryMinus = prevIsMinus && tok.type === TokenType.NUMBER &&
+        (i < 2 ||
+         (toks[i - 2]?.type === TokenType.OPERATOR) ||
+         (toks[i - 2]?.type === TokenType.LPAREN) ||
+         (toks[i - 2]?.type === TokenType.COMMA) ||
+         (toks[i - 2]?.type === TokenType.LBRACKET));
 
       // Don't add space between unary minus and number
-      const skipSpaceForUnaryMinus = prevIsMinus && tok.type === TokenType.NUMBER;
+      const skipSpaceForUnaryMinus = isUnaryMinus;
 
       // Always add space after comma
       const needsSpaceAfterComma = result.length > 0 && result[result.length - 1] === ',';
@@ -123,7 +133,18 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
     }
 
     // Check if immediately followed by a function call
-    return isFunctionCall(nextIdx);
+    // But only if previous token is a function name (meaning this is inside a function call)
+    // Example: IF(exp(...)) is immediate nesting, but (exp(...)) is not
+    if (isFunctionCall(nextIdx)) {
+      const prevIdx = startIdx - 1;
+      if (prevIdx >= 0) {
+        const prevToken = tokens[prevIdx];
+        // Only immediate nesting if previous is a function name
+        return prevToken.type === TokenType.IDENTIFIER || prevToken.type === TokenType.KEYWORD;
+      }
+    }
+
+    return false;
   };
 
   // Measure content length until closing paren
