@@ -54,24 +54,33 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       const tok = toks[i];
       if (tok.type === TokenType.NEWLINE) continue;
 
-      // Check if previous token was an operator
+      // Check if previous token was an operator or minus sign
       const prevTok = i > 0 ? toks[i - 1] : null;
-      const prevIsOperator = prevTok?.type === TokenType.OPERATOR;
+      const prevIsMinus = prevTok?.type === TokenType.OPERATOR && prevTok?.value === '-';
+
+      // Don't add space between unary minus and number
+      const skipSpaceForUnaryMinus = prevIsMinus && tok.type === TokenType.NUMBER;
+
+      // Always add space after comma
+      const needsSpaceAfterComma = result.length > 0 && result[result.length - 1] === ',';
+
+      // Check if previous token was identifier/keyword (function name)
+      const prevIsIdentifier = prevTok?.type === TokenType.IDENTIFIER || prevTok?.type === TokenType.KEYWORD;
 
       // Add space before token if needed
       const needsSpace = result.length > 0 &&
           result[result.length - 1] !== '(' &&
           result[result.length - 1] !== '[' &&
           result[result.length - 1] !== ' ' &&
-          (tok.type !== TokenType.LPAREN || prevIsOperator) &&  // Space before ( if after operator
+          !(tok.type === TokenType.LPAREN && prevIsIdentifier) &&  // No space between function name and (
           tok.type !== TokenType.RPAREN &&  // No space before )
           tok.type !== TokenType.RBRACKET && // No space before ]
           tok.type !== TokenType.COMMA;      // No space before ,
-      // Note: We DO want space before [, so LBRACKET is not in the exclusion list
+
       // Always add space before comment if there's content before it
       const needsSpaceBeforeComment = tok.type === TokenType.COMMENT && result.length > 0;
 
-      if (needsSpace || needsSpaceBeforeComment) {
+      if ((needsSpace || needsSpaceBeforeComment || needsSpaceAfterComma) && !skipSpaceForUnaryMinus) {
         result += ' ';
       }
 
@@ -94,8 +103,27 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
     if (nextIdx >= tokens.length) return false;
 
     const nextToken = tokens[nextIdx];
-    // Check if immediately followed by another LPAREN or a function call
-    return nextToken.type === TokenType.LPAREN || isFunctionCall(nextIdx);
+
+    // If next token is LPAREN, check if it's part of a function call or just a paren expression
+    // (exp(...)) is NOT immediate nesting, but IF(IF(...)) IS immediate nesting
+    if (nextToken.type === TokenType.LPAREN) {
+      // Check what comes before this opening paren
+      // If previous token (before startIdx) is a function/identifier, then this is immediate nesting
+      // Example: IF((...)) - the second ( is at startIdx, previous is IF
+      const prevIdx = startIdx - 1;
+      if (prevIdx >= 0) {
+        const prevToken = tokens[prevIdx];
+        // If previous is identifier/keyword (function name), then this is immediate nesting
+        if (prevToken.type === TokenType.IDENTIFIER || prevToken.type === TokenType.KEYWORD) {
+          return true;
+        }
+      }
+      // Otherwise (exp(...)) is just a parenthesized expression, not immediate nesting
+      return false;
+    }
+
+    // Check if immediately followed by a function call
+    return isFunctionCall(nextIdx);
   };
 
   // Measure content length until closing paren
