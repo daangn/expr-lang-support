@@ -50,7 +50,29 @@ export function tokenize(input: string): Token[] {
       continue;
     }
 
-    // Comment (# or //)
+    // Multiline comment /* ... */
+    if (char === '/' && input[i + 1] === '*') {
+      const start = i;
+      i += 2; // Skip /*
+      while (i < input.length) {
+        if (input[i] === '\n') {
+          line++;
+          col = 1;
+        } else {
+          col++;
+        }
+        if (input[i] === '*' && input[i + 1] === '/') {
+          i += 2; // Skip */
+          col += 2;
+          break;
+        }
+        i++;
+      }
+      tokens.push({ type: TokenType.COMMENT, value: input.slice(start, i), line, col });
+      continue;
+    }
+
+    // Single line comment (# or //)
     if (char === '#' || (char === '/' && input[i + 1] === '/')) {
       const start = i;
       while (i < input.length && input[i] !== '\n') {
