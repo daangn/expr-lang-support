@@ -59,6 +59,11 @@
           "type": "number",
           "default": 120,
           "description": "Maximum line length before expanding functions to multiple lines"
+        },
+        "expr.rainbowBrackets.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable rainbow brackets for parentheses"
         }
       }
     },
