@@ -2,13 +2,6 @@
 
 Simple and clean formatter for Expr language.
 
-## Features
-
-- **Minimal complexity**: ~50 lines of core code
-- **Respects your code**: Maintains your line breaks and structure
-- **Auto-indentation**: Automatically indents based on parentheses
-- **Comment handling**: Adds blank lines before comments (groups consecutive comments)
-
 ## Installation
 
 ### Global installation

@@ -1,6 +1,6 @@
 # Expr Language Support
 
-Complete language support for [Expr](https://github.com/expr-lang/expr) language - syntax highlighting and formatting in one extension!
+Complete language support for Expr language - syntax highlighting, intelligent formatting, and rainbow brackets all in one extension!
 
 ## Features
 
@@ -14,35 +14,48 @@ Complete language support for [Expr](https://github.com/expr-lang/expr) language
   - Built-in functions
   - Special variables: `$env`, `#`, `#acc`, `#index`
 
-### 🎨 Code Formatting
-- Simple and clean formatter (~50 lines of code)
-- Respects your code structure
-- Auto-indentation based on parentheses
-- Smart comment handling with blank lines
-- Format on save support
+### 🌈 Rainbow Brackets & Indent Guides
+- **Rainbow Brackets**: Color-coded parentheses by nesting depth (5 colors)
+  - Coral Pink, Amber Orange, Sky Blue, Mint Green, Lilac Violet
+- **Rainbow Indent Guides**: Subtle colored vertical lines for each indent level
+  - Dark Brown, Brown, Blue, Teal, Violet
+- Helps visualize nested expressions and structure at a glance
+- Automatically skips comments and strings
+- Can be toggled on/off in settings
+
+### 🎨 Intelligent Code Formatting
+- **Smart formatting** with multiline expansion
+- **Preserves user intent**: Already multiline expressions stay multiline
+- **Auto-indentation** based on parentheses and brackets
+- **Smart spacing**:
+  - Automatically adds space after commas
+  - Correctly handles unary vs binary minus (`-1` vs `x - 1`)
+  - No space between function name and opening paren
+- **Comment handling**:
+  - Preserves blank lines above standalone comments
+  - Groups consecutive comment blocks together
+  - Handles `#`, `//`, and `/* */` style comments
+- **Format on save** support (enabled by default)
 
 ## Installation
 
-1. Download the `.vsix` file
-2. Open VS Code
-3. Go to Extensions view (`Ctrl+Shift+X` or `Cmd+Shift+X`)
-4. Click the `...` menu at the top
-5. Select "Install from VSIX..."
-6. Choose the downloaded `expr-lang-support-0.3.0.vsix` file
+### Install from code
+
+```bash
+npm run package:vscod
+code --install-extension expr-lang-support-0.3.0.vsix
+```
+
+### VS Code Marketplace
+
+Search the "Expr Language Support" in the Marketplace tab, and install the extension.
 
 ## Usage
 
 ### Syntax Highlighting
 Automatically applied to `.expr` files!
 
-### Code Formatting
-
-#### Format Document
-- **Command Palette**: Press `Ctrl+Shift+P` (Windows/Linux) or `Cmd+Shift+P` (Mac), then type "Format Document"
-- **Keyboard Shortcut**: `Shift+Alt+F` (Windows/Linux) or `Shift+Option+F` (Mac)
-- **Context Menu**: Right-click in the editor and select "Format Document"
-
-#### Format on Save
+### Format on Save
 Format on save is enabled by default. To disable:
 ```json
 {
@@ -54,41 +67,95 @@ Format on save is enabled by default. To disable:
 
 ## Configuration
 
+All settings are optional and have sensible defaults:
+
 ```json
 {
-  "expr.indentSize": 2,         // Number of spaces for indentation
-  "expr.maxLineLength": 120     // Maximum line length before expanding functions
+  // Formatter settings
+  "expr.indentSize": 2,                    // Number of spaces for indentation (default: 2)
+  "expr.maxLineLength": 120,               // Maximum line length before expanding (default: 120)
+
+  // Rainbow brackets settings
+  "expr.rainbowBrackets.enabled": true,    // Enable rainbow brackets and indent guides (default: true)
+
+  // Format on save
+  "[expr]": {
+    "editor.formatOnSave": true,           // Auto-format on save (default: true)
+    "editor.defaultFormatter": "daangn.expr-lang-support"
+  }
 }
 ```
 
-## Formatting Example
+### Disable Rainbow Brackets
 
-### Before
-```expr
-# comment
-IF(a > b,
-result1,
-result2)
-* factor
+If you prefer plain brackets without colors:
+
+```json
+{
+  "expr.rainbowBrackets.enabled": false
+}
 ```
 
-### After
+## Formatting Examples
+
+### Example 1: Auto-expansion for long expressions
+
+**Before:**
 ```expr
-# comment
-IF(a > b,
-  result1,
-  result2)
-* factor
+IF(CANDIDATE_TYPE == candidate_type('ARTICLE'), calculate_score(Q_VALUE, P_IMPRESSION, OPERATION_SCORE), 0)
 ```
 
-## How the Formatter Works
+**After:**
+```expr
+IF(
+  CANDIDATE_TYPE == candidate_type('ARTICLE'),
+  calculate_score(Q_VALUE, P_IMPRESSION, OPERATION_SCORE),
+  0
+)
+```
 
-The formatter is intentionally simple:
-1. You manually break expressions into multiple lines as you prefer
-2. The formatter automatically fixes the indentation
-3. Lines ending with `(` increase indent for the next line
-4. Lines starting with `)` decrease indent
-5. Blank lines are added before comments (except consecutive comments)
+### Example 2: Smart spacing and negative numbers
+
+**Before:**
+```expr
+min(1.0,(exp(2.0) - 1))
+IF(x > 0, - 1, - 2)
+```
+
+**After:**
+```expr
+min(1.0, (exp(2.0) - 1))
+IF(x > 0, -1, -2)
+```
+
+### Example 3: Comment handling
+
+**Before:**
+```expr
+x * y
+# Service weight
+* 0.735
+# Engagement score
+* engagement
+# Another comment
+# Continuation of comment block
+* decay
+```
+
+**After:**
+```expr
+x * y
+
+# Service weight
+* 0.735
+
+# Engagement score
+* engagement
+
+# Another comment
+# Continuation of comment block
+* decay
+```
 
 ## Supported Language Features
 
@@ -107,16 +174,83 @@ The formatter is intentionally simple:
 - **Special Variables**: `$env.VAR`, `#` (predicate), `#acc` (accumulator), `#index`
 - **Comments**: Line comments (`#`, `//`) and block comments (`/* */`)
 
-## Language Configuration
+## Development & Deployment
 
-- **Auto-closing pairs**: `()`, `[]`, `{}`, `""`, `''`, `` `` ``
-- **Surrounding pairs**: Same as auto-closing
-- **Comment toggle**: Use `Ctrl+/` (Windows/Linux) or `Cmd+/` (Mac)
+### Building from Source
+
+```bash
+# Clone the repository
+git clone https://github.com/your-repo/expr-lang-support
+cd expr-lang-support/packages/vscode
+
+# Install dependencies
+npm install
+
+# Build the extension
+npm run build
+
+# Package the extension
+npm run package
+```
+
+### Development
+
+```bash
+# Watch mode (auto-rebuild on changes)
+npm run watch
+
+# Then press F5 in VS Code to launch Extension Development Host
+```
+
+### Publishing to VS Code Marketplace
+
+1. **Get Publisher Access Token**
+   - Create an Azure DevOps account
+   - Generate a Personal Access Token with `Marketplace (Manage)` scope
+   - More info: https://code.visualstudio.com/api/working-with-extensions/publishing-extension
+
+2. **Login to vsce**
+   ```bash
+   npm install -g @vscode/vsce
+   vsce login <publisher-name>
+   ```
+
+3. **Publish**
+   ```bash
+   # Publish current version
+   vsce publish
+
+   # Or publish with version bump
+   vsce publish patch  # 0.3.0 -> 0.3.1
+   vsce publish minor  # 0.3.0 -> 0.4.0
+   vsce publish major  # 0.3.0 -> 1.0.0
+   ```
+
+## Troubleshooting
+
+### Extension not activating
+- Make sure your file has `.expr` extension
+- Reload VS Code: `Ctrl+Shift+P` → "Reload Window"
+
+### Formatting not working
+- Check that the extension is set as default formatter:
+  ```json
+  {
+    "[expr]": {
+      "editor.defaultFormatter": "daangn.expr-lang-support"
+    }
+  }
+  ```
+
+### Rainbow brackets not showing
+- Check that rainbow brackets are enabled:
+  ```json
+  {
+    "expr.rainbowBrackets.enabled": true
+  }
+  ```
+- Reload VS Code after changing settings
 
 ## License
 
 MIT
-
----
-
-**Enjoy coding with Expr!** 🚀
