@@ -64,12 +64,6 @@
     },
     "configurationDefaults": {
       "[expr]": {
-        "editor.formatOnSave": true,
-        "editor.defaultFormatter": "daangn.expr-lang-support"
-      }
-    },
-    "configurationDefaults": {
-      "[expr]": {
         "editor.tokenColorCustomizations": {
           "textMateRules": [
             {
@@ -84,7 +78,9 @@
               }
             }
           ]
-        }
+        },
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "daangn.expr-lang-support"
       }
     }
   },
