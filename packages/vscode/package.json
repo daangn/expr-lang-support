@@ -3,7 +3,7 @@
   "displayName": "Expr Language Support",
   "description": "Syntax highlighting and formatting for Expr language (.expr files)",
   "version": "0.3.0",
-  "publisher": "daangn",
+  "publisher": "daangn-ml-data-platform",
   "repository": {
     "type": "git",
     "url": "https://github.com/daangn/expr-lang-support"
@@ -85,7 +85,7 @@
           ]
         },
         "editor.formatOnSave": true,
-        "editor.defaultFormatter": "daangn.expr-lang-support"
+        "editor.defaultFormatter": "daangn-ml-data-platform.expr-lang-support"
       }
     }
   },

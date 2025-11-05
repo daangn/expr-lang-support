@@ -81,7 +81,7 @@ All settings are optional and have sensible defaults:
   // Format on save
   "[expr]": {
     "editor.formatOnSave": true,           // Auto-format on save (default: true)
-    "editor.defaultFormatter": "daangn.expr-lang-support"
+    "editor.defaultFormatter": "daangn-ml-data-platform.expr-lang-support"
   }
 }
 ```
