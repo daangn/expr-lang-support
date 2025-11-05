@@ -36,6 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
+const path = __importStar(require("path"));
 const formatter_1 = require("./formatter");
 // Rainbow bracket colors - optimized for readability
 const BRACKET_COLORS = [
@@ -243,6 +244,78 @@ function updateIndentGuides(editor) {
         console.error('Rainbow indent guide error:', error);
     }
 }
+class ExprFileLinkProvider {
+    provideDocumentLinks(document) {
+        const links = [];
+        const text = document.getText();
+        // Match quoted strings containing .expr files
+        const regex = /["']([^"']+\.expr)["']/g;
+        let match;
+        while ((match = regex.exec(text)) !== null) {
+            const filePath = match[1];
+            const startPos = document.positionAt(match.index + 1); // +1 to skip opening quote
+            const endPos = document.positionAt(match.index + 1 + filePath.length);
+            const range = new vscode.Range(startPos, endPos);
+            try {
+                // Resolve file path relative to current document
+                const currentDir = path.dirname(document.uri.fsPath);
+                const fullPath = path.resolve(currentDir, filePath);
+                const fileUri = vscode.Uri.file(fullPath);
+                // Create document link
+                const link = new vscode.DocumentLink(range, fileUri);
+                link.tooltip = `Open ${filePath}`;
+                links.push(link);
+            }
+            catch (error) {
+                console.error('[ExprLink] Error resolving expr file path:', error);
+            }
+        }
+        return links;
+    }
+}
+class ExprFileDefinitionProvider {
+    provideDefinition(document, position) {
+        console.log('[ExprDef] provideDefinition called at', position.line, position.character);
+        const line = document.lineAt(position.line);
+        const lineText = line.text;
+        console.log('[ExprDef] Line text:', lineText);
+        // Scan the entire line for .expr files and find the one under cursor
+        const regex = /["']([^"']+\.expr)["']/g;
+        let match;
+        while ((match = regex.exec(lineText)) !== null) {
+            const filePath = match[1];
+            const matchStart = match.index + 1; // +1 to skip opening quote
+            const matchEnd = matchStart + filePath.length;
+            console.log('[ExprDef] Checking match:', filePath, 'range:', matchStart, '-', matchEnd);
+            // Check if cursor is within this match (including the filename)
+            if (position.character >= matchStart && position.character <= matchEnd) {
+                console.log('[ExprDef] Cursor is within match!');
+                try {
+                    // Resolve file path relative to current document
+                    const currentDir = path.dirname(document.uri.fsPath);
+                    const fullPath = path.resolve(currentDir, filePath);
+                    const fileUri = vscode.Uri.file(fullPath);
+                    console.log('[ExprDef] Resolved full path:', fullPath);
+                    // Create the range for the entire filename (without quotes)
+                    const originSelectionRange = new vscode.Range(new vscode.Position(position.line, matchStart), new vscode.Position(position.line, matchEnd));
+                    // Return LocationLink with explicit range for better hover UX
+                    return [{
+                            originSelectionRange: originSelectionRange,
+                            targetUri: fileUri,
+                            targetRange: new vscode.Range(0, 0, 0, 0),
+                            targetSelectionRange: new vscode.Range(0, 0, 0, 0)
+                        }];
+                }
+                catch (error) {
+                    console.error('[ExprDef] Error resolving expr file path:', error);
+                    return undefined;
+                }
+            }
+        }
+        console.log('[ExprDef] No match found');
+        return undefined;
+    }
+}
 function activate(context) {
     console.log('Expr language extension activated');
     // Create bracket decorations
@@ -302,7 +375,13 @@ function activate(context) {
             updateIndentGuides(vscode.window.activeTextEditor);
         }
     });
-    context.subscriptions.push(formatterProvider, formatCommand, editorChangeListener, documentChangeListener, configChangeListener);
+    // Register document link provider for .expr file highlighting
+    // Makes .expr files appear as clickable links in all file types
+    const linkProvider = vscode.languages.registerDocumentLinkProvider({ scheme: 'file' }, new ExprFileLinkProvider());
+    // Register definition provider for .expr file navigation
+    // Works in all file types (markdown, plaintext, etc.)
+    const definitionProvider = vscode.languages.registerDefinitionProvider({ scheme: 'file' }, new ExprFileDefinitionProvider());
+    context.subscriptions.push(formatterProvider, formatCommand, editorChangeListener, documentChangeListener, configChangeListener, linkProvider, definitionProvider);
 }
 function deactivate() {
     console.log('Expr language extension deactivated');

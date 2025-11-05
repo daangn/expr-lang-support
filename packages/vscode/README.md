@@ -37,18 +37,23 @@ Complete language support for Expr language - syntax highlighting, intelligent f
   - Handles `#`, `//`, and `/* */` style comments
 - **Format on save** support (enabled by default)
 
+### 🔗 Expr File Navigation
+- **Go to Definition**: Cmd+Click (Mac) / Ctrl+Click (Windows) or F12 on `"*.expr"` strings to open referenced files
+- **Link Highlighting**: `.expr` file references are automatically highlighted as clickable links
+- **Works everywhere**: Supports file references in any file type (Markdown, JSON, YAML, etc.)
+- **Relative paths**: Supports relative paths like `"../data/input.expr"` or `"./config.expr"`
+- **Tooltip preview**: Hover to see the file path
+
 ## Installation
 
-### Install from code
+### From VS Code Marketplace
 
-```bash
-npm run package:vscod
-code --install-extension expr-lang-support-0.3.0.vsix
-```
+1. Open VS Code
+2. Press `Ctrl+Shift+X` (Windows/Linux) or `Cmd+Shift+X` (Mac) to open Extensions
+3. Search for "Expr Lang - Syntax & Formatter"
+4. Click Install
 
-### VS Code Marketplace
-
-Search the "Expr Language Support" in the Marketplace tab, and install the extension.
+Or visit the [VS Code Marketplace](https://marketplace.visualstudio.com/vscode)
 
 ## Usage
 
@@ -237,7 +242,7 @@ npm run watch
   ```json
   {
     "[expr]": {
-      "editor.defaultFormatter": "daangn.expr-lang-support"
+      "editor.defaultFormatter": "daangn-ml-data-platform.expr-lang-support"
     }
   }
   ```
