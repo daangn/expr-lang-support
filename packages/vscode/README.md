@@ -53,7 +53,7 @@ Complete language support for Expr language - syntax highlighting, intelligent f
 3. Search for "Expr Lang - Syntax & Formatter"
 4. Click Install
 
-Or visit the [VS Code Marketplace](https://marketplace.visualstudio.com/vscode)
+Or visit the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=daangn-ml-data-platform.expr-lang-support)
 
 ## Usage
 

@@ -17,7 +17,7 @@ VS Code extension for [Expr](https://github.com/expr-lang/expr) language with sy
 2. Search for "Expr Lang - Syntax & Formatter"
 3. Click Install
 
-Or visit the [VS Code Marketplace](https://marketplace.visualstudio.com/vscode)
+Or visit the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=daangn-ml-data-platform.expr-lang-support).
 
 ## Usage
 
