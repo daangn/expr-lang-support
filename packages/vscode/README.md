@@ -58,6 +58,7 @@ Or visit the [VS Code Marketplace](https://marketplace.visualstudio.com/vscode)
 ## Usage
 
 ### Syntax Highlighting
+
 Automatically applied to `.expr` files!
 
 ### Format on Save
@@ -258,4 +259,4 @@ npm run watch
 
 ## License
 
-MIT
+This project is licensed under the [MIT License](./LICENSE).
