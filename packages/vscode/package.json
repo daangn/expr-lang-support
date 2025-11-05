@@ -1,6 +1,6 @@
 {
   "name": "expr-lang-support",
-  "displayName": "Expr Language Support",
+  "displayName": "Expr Lang - Syntax & Formatter",
   "description": "Syntax highlighting and formatting for Expr language (.expr files)",
   "version": "0.3.0",
   "publisher": "daangn-ml-data-platform",
