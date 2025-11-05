@@ -1,0 +1,100 @@
+name: Publish Extension
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Get tag version
+        id: tag
+        run: |
+          TAG=${GITHUB_REF#refs/tags/v}
+          echo "version=$TAG" >> $GITHUB_OUTPUT
+          echo "Tag version: $TAG"
+
+          # Validate semantic versioning format
+          if ! echo "$TAG" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Error: Tag must follow semantic versioning format (v<major>.<minor>.<patch>)"
+            exit 1
+          fi
+
+      - name: Get package.json version
+        id: package
+        working-directory: packages/vscode
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Package.json version: $VERSION"
+
+      - name: Check version match
+        run: |
+          if [ "${{ steps.tag.outputs.version }}" != "${{ steps.package.outputs.version }}" ]; then
+            echo "Error: Tag version (${{ steps.tag.outputs.version }}) does not match package.json version (${{ steps.package.outputs.version }})"
+            exit 1
+          fi
+          echo "Version match confirmed: ${{ steps.tag.outputs.version }}"
+
+      - name: Install dependencies
+        working-directory: packages/vscode
+        run: npm install
+
+      - name: Build extension
+        working-directory: packages/vscode
+        run: npm run build
+
+      - name: Package extension
+        working-directory: packages/vscode
+        run: npx vsce package
+
+      - name: Publish to VS Code Marketplace
+        working-directory: packages/vscode
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_MARKETPLACE_PAT }}
+        run: npx vsce publish -p $VSCE_PAT
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release v${{ steps.tag.outputs.version }}
+          body: |
+            ## Expr Language Support v${{ steps.tag.outputs.version }}
+
+            ### Installation
+            Download the `.vsix` file below and install it in VS Code:
+            ```bash
+            code --install-extension expr-lang-support-${{ steps.tag.outputs.version }}.vsix
+            ```
+
+            Or search for "Expr Lang - Syntax & Formatter" in the VS Code Marketplace.
+
+            ### Changes
+            See [README.md](https://github.com/daangn/expr-lang-support/blob/main/packages/vscode/README.md) for full documentation.
+          draft: false
+          prerelease: false
+
+      - name: Upload VSIX to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: packages/vscode/expr-lang-support-${{ steps.tag.outputs.version }}.vsix
+          asset_name: expr-lang-support-${{ steps.tag.outputs.version }}.vsix
+          asset_content_type: application/octet-stream
