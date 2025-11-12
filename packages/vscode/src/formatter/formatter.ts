@@ -48,19 +48,44 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
   };
 
   // Convert tokens to string
-  const tokensToString = (toks: Token[]): string => {
+  const tokensToString = (toks: Token[], prevTokenBeforeLine?: Token | null): string => {
     let result = '';
+
     for (let i = 0; i < toks.length; i++) {
       const tok = toks[i];
       if (tok.type === TokenType.NEWLINE) continue;
+
+      // Special handling for minus at line start
+      if (tok.type === TokenType.OPERATOR && tok.value === '-' && result.length === 0) {
+        const nextTok = i + 1 < toks.length ? toks[i + 1] : null;
+        if (nextTok?.type === TokenType.NUMBER) {
+          // Check previous token before this line to determine if it's binary or unary
+          // Binary if previous was: number, identifier, ), ]
+          // Unary if previous was: (, [, ,, operator, or nothing
+          const isBinaryMinus = prevTokenBeforeLine && (
+            prevTokenBeforeLine.type === TokenType.NUMBER ||
+            prevTokenBeforeLine.type === TokenType.IDENTIFIER ||
+            prevTokenBeforeLine.type === TokenType.RPAREN ||
+            prevTokenBeforeLine.type === TokenType.RBRACKET
+          );
+
+          if (isBinaryMinus) {
+            // Binary minus: add space after it
+            result += '- ';
+            continue;
+          }
+          // Otherwise it's unary minus, process normally
+        }
+      }
 
       // Check if previous token was an operator or minus sign
       const prevTok = i > 0 ? toks[i - 1] : null;
 
       // Check if this is unary minus (negative number) vs binary minus (subtraction)
-      // Unary minus: after operator, lparen, comma, lbracket, or at start
+      // Unary minus: after operator, lparen, comma, lbracket
       // Binary minus: after number, identifier, rparen, rbracket
       const prevIsMinus = prevTok?.type === TokenType.OPERATOR && prevTok?.value === '-';
+
       const isUnaryMinus = prevIsMinus && tok.type === TokenType.NUMBER &&
         (i < 2 ||
          (toks[i - 2]?.type === TokenType.OPERATOR) ||
@@ -247,11 +272,11 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       } else if (tok.type === TokenType.LPAREN) {
         depth++;
 
-        // Check if this paren has multiline content
-        const { hasNewlines: parenHasNewlines } = measureToClosingParen(idx);
+        // Check if this paren has multiline content AND is long enough to warrant expansion
+        const { hasNewlines: parenHasNewlines, length: parenLength } = measureToClosingParen(idx);
 
-        if (parenHasNewlines && depth === 2) {
-          // This is a multiline paren inside function argument
+        if (parenHasNewlines && depth === 2 && parenLength > opts.maxLineLength) {
+          // This is a multiline paren inside function argument that's too long
           // Output current arg content before the paren if exists, including the opening paren
           currentArg.push(tok);
 
@@ -405,7 +430,8 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
         const nestedNextIdx = idx + 1;
         const { length: nestedLength, hasImmediateNesting: nestedHasImmediate, hasNewlines: nestedHasNewlines } = measureToClosingParen(nestedNextIdx);
 
-        if (nestedLength > opts.maxLineLength || nestedHasImmediate || nestedHasNewlines) {
+        // Only expand if it's long, has immediate nesting, or is both multiline AND long
+        if (nestedLength > opts.maxLineLength || nestedHasImmediate || (nestedHasNewlines && nestedLength > opts.maxLineLength)) {
           // Nested function needs expansion
           if (currentArg.length > 0) {
             lines.push(indent() + tokensToString(currentArg));
@@ -488,8 +514,8 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       }
       const hasFunctionInside = isFunctionCall(nextIdx);
 
-      // Expand if: long, has immediate nesting, has newlines (already multiline), or contains function call that needs expansion
-      if (length > opts.maxLineLength || hasImmediateNesting || hasNewlines || (hasFunctionInside && length > opts.maxLineLength)) {
+      // Expand if: long, has immediate nesting, or (multiline AND long)
+      if (length > opts.maxLineLength || hasImmediateNesting || (hasNewlines && length > opts.maxLineLength)) {
         // Check if previous token was an operator
         const prevIsOp = prevTokenIsOperator(i);
 
@@ -551,7 +577,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       if (isFunctionCall(i)) {
         const nextIdx = i + 1;
         const { length, hasImmediateNesting, hasNewlines } = measureToClosingParen(nextIdx);
-        if (length > opts.maxLineLength || hasImmediateNesting || hasNewlines) {
+        if (length > opts.maxLineLength || hasImmediateNesting || (hasNewlines && length > opts.maxLineLength)) {
           break; // Stop here, will be processed on next iteration
         }
       }
@@ -565,7 +591,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
         if (isFunctionCall(nextIdx)) {
           // Measure from the opening paren to include immediate nesting check
           const { length, hasImmediateNesting, hasNewlines } = measureToClosingParen(i);
-          if (length > opts.maxLineLength || hasImmediateNesting || hasNewlines) {
+          if (length > opts.maxLineLength || hasImmediateNesting || (hasNewlines && length > opts.maxLineLength)) {
             break; // Stop here, will be processed on next iteration
           }
         }
@@ -612,7 +638,14 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
           indentLevel = Math.max(0, indentLevel - 1);
         }
 
-        const lineStr = tokensToString(lineTokens);
+        // Find previous non-NEWLINE token before this line
+        let prevTokenIdx = lineStartIdx - 1;
+        while (prevTokenIdx >= 0 && tokens[prevTokenIdx].type === TokenType.NEWLINE) {
+          prevTokenIdx--;
+        }
+        const prevTokenBeforeLine = prevTokenIdx >= 0 ? tokens[prevTokenIdx] : null;
+
+        const lineStr = tokensToString(lineTokens, prevTokenBeforeLine);
 
         // Check if previous token (before this line) is an operator
         const prevIsOp = prevTokenIsOperator(lineStartIdx);
