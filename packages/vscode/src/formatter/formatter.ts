@@ -380,9 +380,25 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
           }
           indentLevel--;
 
-          // Check if there's an inline comment immediately after the closing paren (no newline in between)
+          // Build closing line with ) and check for trailing comma or comment
           let closingLine = indent() + ')';
           let nextIdx = idx + 1;
+
+          // Skip newlines to find next meaningful token
+          while (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.NEWLINE) {
+            nextIdx++;
+          }
+
+          // Check if next token is comma - include it on same line
+          if (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.COMMA) {
+            closingLine += ',';
+            lines.push(closingLine);
+            lastOutputWasComment = false;
+            return nextIdx + 1; // Skip past the comma
+          }
+
+          // Check if there's an inline comment immediately after the closing paren (no newline in between)
+          nextIdx = idx + 1;
           // Only attach comment if it's the immediate next token (not after newline)
           if (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.COMMENT) {
             // Append inline comment to closing paren
@@ -689,9 +705,23 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
             continue;
           }
 
-          lines.push(indent() + ')');
-          lastProcessedToken = token; // RPAREN
-          i++;
+          // Output ) and check if there's a comma that should be on the same line
+          let lineContent = indent() + ')';
+          let nextIdx = i + 1;
+          // Skip newlines to find next meaningful token
+          while (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.NEWLINE) {
+            nextIdx++;
+          }
+          // If next token is comma, include it on the same line
+          if (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.COMMA) {
+            lineContent += ',';
+            i = nextIdx + 1; // Skip past the comma
+            lastProcessedToken = tokens[nextIdx];
+          } else {
+            i++;
+            lastProcessedToken = token; // RPAREN
+          }
+          lines.push(lineContent);
           continue;
         }
       }
