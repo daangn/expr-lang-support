@@ -2,7 +2,7 @@
   "name": "expr-lang-support",
   "displayName": "Expr Lang - Syntax & Formatter",
   "description": "Syntax highlighting and formatting for Expr language (.expr files)",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "publisher": "daangn-ml-data-platform",
   "repository": {
     "type": "git",
