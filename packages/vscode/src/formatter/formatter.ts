@@ -47,6 +47,16 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
     return false;
   };
 
+  const getPrevOperator = (currentIdx: number): string | null => {
+    for (let j = currentIdx - 1; j >= 0; j--) {
+      const t = tokens[j];
+      if (t.type === TokenType.NEWLINE) continue;
+      if (t.type === TokenType.OPERATOR) return t.value;
+      return null;
+    }
+    return null;
+  };
+
   /**
    * Token classification: Check if token represents a value
    * (number, string, identifier, or closing bracket/paren)
@@ -72,6 +82,46 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
            prevToken.type === TokenType.LPAREN ||
            prevToken.type === TokenType.COMMA ||
            prevToken.type === TokenType.LBRACKET;
+  };
+
+  /**
+   * Determine if minus at line start is binary subtraction (not unary negative).
+   * This handles multi-line arithmetic expressions where minus starts a new line.
+   */
+  const isMinusBinaryAtLineStart = (
+    prevTokenBeforeLine: Token | null,
+    tokensInLine: Token[],
+    minusIdx: number
+  ): boolean => {
+    // If we have clear context from previous line
+    if (prevTokenBeforeLine) {
+      // Definitely unary after these tokens
+      if (isMinusUnary(prevTokenBeforeLine)) {
+        return false;
+      }
+      // Binary after value tokens
+      if (isValueToken(prevTokenBeforeLine)) {
+        return true;
+      }
+      // Binary after arithmetic operator if line has more tokens (multi-line arithmetic)
+      if (prevTokenBeforeLine.type === TokenType.OPERATOR &&
+          ['+', '-', '*', '/'].includes(prevTokenBeforeLine.value) &&
+          minusIdx + 2 < tokensInLine.length) {
+        return true;
+      }
+    }
+
+    // No clear context, check pattern: - NUMBER * IDENTIFIER (not function call)
+    if (minusIdx + 3 < tokensInLine.length &&
+        tokensInLine[minusIdx + 1]?.type === TokenType.NUMBER &&
+        tokensInLine[minusIdx + 2]?.type === TokenType.OPERATOR &&
+        tokensInLine[minusIdx + 2]?.value === '*' &&
+        tokensInLine[minusIdx + 3]?.type === TokenType.IDENTIFIER &&
+        !(minusIdx + 4 < tokensInLine.length && tokensInLine[minusIdx + 4]?.type === TokenType.LPAREN)) {
+      return true;
+    }
+
+    return false;
   };
 
   /**
@@ -136,24 +186,32 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       const nextTok = i + 1 < toks.length ? toks[i + 1] : null;
       const lastChar = result.length > 0 ? result[result.length - 1] : '';
 
-      // Special case: Minus at line start followed by number
-      // Determine if binary (subtraction) or unary (negative) based on previous line context
-      if (tok.type === TokenType.OPERATOR && tok.value === '-' &&
-          result.length === 0 && nextTok?.type === TokenType.NUMBER) {
-        const isBinaryMinus = isValueToken(prevTokenBeforeLine ?? null);
-        if (isBinaryMinus) {
-          result += '- ';
+      // Handle minus operator spacing: binary (subtraction) vs unary (negative)
+      if (tok.type === TokenType.OPERATOR && tok.value === '-') {
+        // Case 1: Minus at line start followed by number
+        if (result.length === 0 && nextTok?.type === TokenType.NUMBER) {
+          if (isMinusBinaryAtLineStart(prevTokenBeforeLine ?? null, toks, i)) {
+            result += '- ';
+            continue;
+          }
+          // Otherwise unary, will be handled by normal spacing rules below
+        }
+        // Case 2: Unary minus within line (after LPAREN, COMMA, LBRACKET)
+        // Note: after other operators like ==, we want normal spacing
+        else if (prevTok &&
+                 (prevTok.type === TokenType.LPAREN ||
+                  prevTok.type === TokenType.COMMA ||
+                  prevTok.type === TokenType.LBRACKET)) {
+          // Unary: no space before minus
+          result += '-';
           continue;
         }
-        // Otherwise unary, handle normally
       }
 
-      // Special case: Number after minus - check if minus is unary
-      const prevIsMinus = prevTok?.type === TokenType.OPERATOR && prevTok.value === '-';
-      if (prevIsMinus && tok.type === TokenType.NUMBER) {
+      // Handle number after unary minus: no space
+      if (tok.type === TokenType.NUMBER && prevTok?.type === TokenType.OPERATOR && prevTok.value === '-') {
         const beforeMinus = i >= 2 ? toks[i - 2] : (prevTokenBeforeLine ?? null);
         if (isMinusUnary(beforeMinus)) {
-          // Unary minus: no space before number
           result += tok.value;
           continue;
         }
@@ -189,6 +247,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
    */
   const shouldBreakBeforeToken = (
     currentToken: Token,
+    currentIdx: number,
     lineTokens: Token[],
     lookAheadToken: Token | null
   ): boolean => {
@@ -206,13 +265,19 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       }
     }
 
-    // Rule 2: Break before || if previous is ) and next is not (
-    // Keep ) || ( together (peer alternatives at same level)
-    // But separate )\n|| when connecting to different structures
+    // Rule 2: Break before || if previous is ) AND there's something other than inline tokens after ||
+    // This preserves inline || expressions like (a) || (b) but breaks when the input has newlines
     if (currentToken.type === TokenType.OPERATOR && currentToken.value === '||') {
       if (lastInLine.type === TokenType.RPAREN) {
-        if (lookAheadToken?.type !== TokenType.LPAREN) {
-          return true;
+        // Check what comes after ||: if it's a NEWLINE or if the next meaningful token is NOT on the same line
+        const nextIdx = currentIdx + 1;
+        if (nextIdx < tokens.length) {
+          const nextToken = tokens[nextIdx];
+          // If there's a newline or comment immediately after ||, break
+          if (nextToken.type === TokenType.NEWLINE || nextToken.type === TokenType.COMMENT) {
+            return true;
+          }
+          // Otherwise, keep inline (e.g., ) || ( on same line)
         }
       }
     }
@@ -232,19 +297,35 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
   };
 
   /**
+   * Checks if a paren expression immediately contains another nested paren expression.
+   * This represents a nested parenthesized structure: `((...))`
+   *
+   * Language structure:
+   * - Parenthesized expression: `(expression)`
+   * - Nested parenthesized: `((expression))` - outer paren wraps inner paren expression
+   *
+   * Returns true if the content right after the opening paren is another opening paren.
+   */
+  const isNestedParenExpression = (parenIdx: number): boolean => {
+    if (tokens[parenIdx]?.type !== TokenType.LPAREN) return false;
+    // Only consider it nested if the next LPAREN is immediately adjacent (no NEWLINE between)
+    // This prevents already-formatted code from being treated as nested again
+    const nextIdx = parenIdx + 1;
+    return nextIdx < tokens.length && tokens[nextIdx]?.type === TokenType.LPAREN;
+  };
+
+  /**
    * Determines what should follow a closing paren based on language structure.
    * This encapsulates the grammar rules for closing parentheses.
    *
    * Language structures:
    * 1. Function argument ending: `)` + `,` = "),`
    *    Rationale: In function calls like IF(cond, value1, value2), comma separates arguments
-   * 2. Peer alternatives: `)` + `||` + `(` = ") || ("
-   *    Rationale: (cond1) || (cond2) are alternatives at the same logical level
-   * 3. Simple closing: Just ")"
-   *    Rationale: Default case, no special continuation
+   * 2. Simple closing: Just ")"
+   *    Rationale: Default case, operators like || will be on separate lines
    *
    * Returns: { suffix: string, skipToIdx: number }
-   * - suffix: what to append after ")" (e.g., ",", " || (", "")
+   * - suffix: what to append after ")" (e.g., ",", "")
    * - skipToIdx: index to continue processing from
    */
   const getClosingParenSuffix = (
@@ -257,15 +338,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       return { suffix: ',', skipToIdx: idx1 + 1 };
     }
 
-    // Structure 2: Peer alternatives ") || ("
-    if (next1?.type === TokenType.OPERATOR && next1.value === '||') {
-      const { token: next2, idx: idx2 } = peekNextToken(idx1 + 1);
-      if (next2?.type === TokenType.LPAREN) {
-        return { suffix: ' || (', skipToIdx: idx2 + 1 };
-      }
-    }
-
-    // Structure 3: Simple closing
+    // Structure 2: Simple closing
     return { suffix: '', skipToIdx: currentIdx + 1 };
   };
 
@@ -411,12 +484,6 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
 
           lines.push(closingLine);
           lastOutputWasComment = false;
-
-          // If we added peer alternatives ") || (", increase indent for the new paren group
-          if (suffix === ' || (') {
-            indentLevel++;
-          }
-
           return skipToIdx;
         } else {
           currentArg.push(tok);
@@ -657,39 +724,94 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
 
     // Handle opening paren - check if we should expand
     if (token.type === TokenType.LPAREN) {
-      // Measure from the opening paren to check if expansion is needed
-      const { length, hasImmediateNesting, hasNewlines } = measureToClosingParen(i);
+      // Skip expansion if we just processed || or opening paren
+      // Rationale: || ( already started a new context, inner content should use line collection
+      const skipExpansion = lastProcessedToken &&
+                           (lastProcessedToken.type === TokenType.LPAREN ||
+                            (lastProcessedToken.type === TokenType.OPERATOR && lastProcessedToken.value === '||'));
 
-      // Look ahead to see if there's a function call inside
-      let nextIdx = i + 1;
-      while (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.NEWLINE) {
-        nextIdx++;
-      }
-      const hasFunctionInside = isFunctionCall(nextIdx);
+      if (skipExpansion) {
+        // Fall through to line collection
+      } else {
+        // Measure from the opening paren to check if expansion is needed
+        const { length, hasImmediateNesting, hasNewlines } = measureToClosingParen(i);
 
-      // Expand if: long or was multiline
-      if (length > opts.maxLineLength || hasNewlines) {
+        // Look ahead to see if there's a function call inside
+        let nextIdx = i + 1;
+        while (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.NEWLINE) {
+          nextIdx++;
+        }
+        const hasFunctionInside = isFunctionCall(nextIdx);
+
+        // Expand if: long or was multiline
+        if (length > opts.maxLineLength || hasNewlines) {
         // Check if previous token was an operator
         const prevIsOp = prevTokenIsOperator(i);
 
-        if (prevIsOp) {
-          // Append ( to the last line with a space
-          lines[lines.length - 1] = lines[lines.length - 1] + ' (';
-        } else {
-          // Expand the paren on a new line
-          lines.push(indent() + '(');
-        }
-        indentLevel++;
-        lastProcessedToken = token; // LPAREN
-        i++;
+        // Check if this is a nested paren expression: ((...)
+        // But NOT if the previous was already an opening paren or ||
+        // Rationale: || ( already starts a new context, inner ( is not "nested"
+        const skipNested = lastProcessedToken &&
+                          (lastProcessedToken.type === TokenType.LPAREN ||
+                           (lastProcessedToken.type === TokenType.OPERATOR && lastProcessedToken.value === '||'));
+        const isNested = isNestedParenExpression(i) && !skipNested;
 
-        // Also expand the inner function if immediate nesting
-        if (hasImmediateNesting && hasFunctionInside) {
-          i = formatFunctionMultiline(nextIdx);
-          // After multiline function, the last processed token is RPAREN
-          if (i > 0) lastProcessedToken = tokens[i - 1];
+        if (prevIsOp) {
+          // Check if the operator is || - if so, don't append ( on same line
+          // Rationale: || should have its operands on separate lines
+          const prevOp = getPrevOperator(i);
+          if (prevOp === '||') {
+            // Put ( on new line
+            lines.push(indent() + '(');
+            indentLevel++;
+            lastProcessedToken = token; // LPAREN
+            i++;
+          } else {
+            // Binary operator with paren operand: `operator (`
+            lines[lines.length - 1] = lines[lines.length - 1] + ' (';
+            indentLevel++;
+            lastProcessedToken = token; // LPAREN
+            i++;
+          }
+
+          // If nested paren expression, the inner paren should be on new line
+          // This creates: `* (\n  (\n    ...\n  )\n)`
+          // Rationale: nested structure should be visually separated for clarity
+          if (isNested) {
+            // Output the inner opening paren on a new line
+            lines.push(indent() + '(');
+            indentLevel++;
+            lastProcessedToken = tokens[i]; // The inner LPAREN
+            i++; // Move past the inner LPAREN
+
+            // Check if there's a function call inside the inner paren
+            const innerNextIdx = i;
+            const innerHasFunctionInside = isFunctionCall(innerNextIdx);
+            if (hasImmediateNesting && innerHasFunctionInside) {
+              i = formatFunctionMultiline(innerNextIdx);
+              if (i > 0) lastProcessedToken = tokens[i - 1];
+            }
+          } else if (hasImmediateNesting && hasFunctionInside) {
+            // Expand inner function if it's a function call
+            i = formatFunctionMultiline(nextIdx);
+            if (i > 0) lastProcessedToken = tokens[i - 1];
+          }
+          continue;
+        } else {
+          // Non-operator context - paren on new line
+          lines.push(indent() + '(');
+          indentLevel++;
+          lastProcessedToken = token; // LPAREN
+          i++;
+
+          // Also expand the inner function if immediate nesting
+          if (hasImmediateNesting && hasFunctionInside) {
+            i = formatFunctionMultiline(nextIdx);
+            if (i > 0) lastProcessedToken = tokens[i - 1];
+          }
+          continue;
         }
-        continue;
+        }
       }
     }
 
@@ -709,12 +831,6 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
           // Update position and last processed token
           lastProcessedToken = tokens[skipToIdx - 1] || token;
           i = skipToIdx;
-
-          // If we added peer alternatives ") || (", increase indent for the new paren group
-          if (suffix === ' || (') {
-            indentLevel++;
-          }
-
           continue;
         }
       }
@@ -740,7 +856,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
 
       // Check if we should break before this token based on logical expression structure
       const { token: lookAheadToken } = peekNextToken(i + 1);
-      if (shouldBreakBeforeToken(t, lineTokens, lookAheadToken)) {
+      if (shouldBreakBeforeToken(t, i, lineTokens, lookAheadToken)) {
         break;
       }
 
@@ -753,8 +869,22 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
         }
       }
 
-      // Stop at opening paren if it contains a function that should be expanded
+      // Stop at opening paren if it should be expanded
       if (t.type === TokenType.LPAREN) {
+        // Check if this is a nested paren expression after operator
+        // e.g., `* ((` should break to `* (\n  (`
+        // But NOT if we just processed ) || ( or || ( pattern
+        const skipNested = lastProcessedToken &&
+                          (lastProcessedToken.type === TokenType.LPAREN ||
+                           (lastProcessedToken.type === TokenType.OPERATOR && lastProcessedToken.value === '||'));
+        if (lineTokens.length > 0 && !skipNested) {
+          const lastToken = lineTokens[lineTokens.length - 1];
+          if (lastToken.type === TokenType.OPERATOR && isNestedParenExpression(i)) {
+            break; // Stop before this paren, will be processed as nested
+          }
+        }
+
+        // Check if it contains a function that should be expanded
         let nextIdx = i + 1;
         while (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.NEWLINE) {
           nextIdx++;
@@ -818,15 +948,50 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
 
         const lineStr = tokensToString(lineTokens, prevTokenBeforeLine);
 
-        // Check if previous token (before this line) is an operator
-        const prevIsOp = prevTokenIsOperator(lineStartIdx);
+        /**
+         * Determine if this line should start on a new line or be appended to the previous line.
+         *
+         * Line breaking rules:
+         * 1. Lines starting with ) always start new line
+         * 2. Arithmetic operators (+, -) at line start indicate multi-line expression -> new line
+         * 3. Logical operator || followed by ( with newline between -> new line for (
+         * 4. Other cases: if previous line ends with operator, append to it
+         */
+        const shouldStartNewLine = (): boolean => {
+          // Rule 1: Closing paren always starts new line
+          if (lineTokens[0].type === TokenType.RPAREN) {
+            return true;
+          }
 
-        if (prevIsOp && lineTokens[0].type !== TokenType.RPAREN) {
+          // Check if previous token (before this line) is an operator
+          const prevIsOp = prevTokenIsOperator(lineStartIdx);
+          if (!prevIsOp) {
+            return true; // No operator before, start new line
+          }
+
+          // Rule 2: Arithmetic operators at line start indicate multi-line arithmetic
+          if (lineTokens[0].type === TokenType.OPERATOR &&
+              (lineTokens[0].value === '+' || lineTokens[0].value === '-')) {
+            return true;
+          }
+
+          // Rule 3: || followed by ( with newline between
+          if (prevTokenBeforeLine?.type === TokenType.OPERATOR &&
+              prevTokenBeforeLine.value === '||' &&
+              lineTokens[0].type === TokenType.LPAREN) {
+            const hasNewlineBetween = lineStartIdx > 0 && tokens[lineStartIdx - 1].type === TokenType.NEWLINE;
+            return hasNewlineBetween;
+          }
+
+          // Default: append to previous line (operator continuation)
+          return false;
+        };
+
+        if (shouldStartNewLine()) {
+          lines.push(indent() + lineStr);
+        } else {
           // Append to the last line with a space
           lines[lines.length - 1] = lines[lines.length - 1] + ' ' + lineStr;
-        } else {
-          // Output on a new line
-          lines.push(indent() + lineStr);
         }
 
         // Check if line ends with (
