@@ -47,7 +47,84 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
     return false;
   };
 
-  // Convert tokens to string
+  /**
+   * Token classification: Check if token represents a value
+   * (number, string, identifier, or closing bracket/paren)
+   */
+  const isValueToken = (tok: Token | null): boolean => {
+    if (!tok) return false;
+    return tok.type === TokenType.NUMBER ||
+           tok.type === TokenType.STRING ||
+           tok.type === TokenType.IDENTIFIER ||
+           tok.type === TokenType.RPAREN ||
+           tok.type === TokenType.RBRACKET;
+  };
+
+  /**
+   * Determine if minus operator is unary (negative sign) or binary (subtraction)
+   * based on the preceding token.
+   */
+  const isMinusUnary = (prevToken: Token | null): boolean => {
+    if (!prevToken) return true; // Minus at start is unary
+
+    // Unary if previous token cannot be a value (after operators, opening brackets, comma)
+    return prevToken.type === TokenType.OPERATOR ||
+           prevToken.type === TokenType.LPAREN ||
+           prevToken.type === TokenType.COMMA ||
+           prevToken.type === TokenType.LBRACKET;
+  };
+
+  /**
+   * Check if we need a space before current token given the previous token
+   */
+  const needsSpaceBefore = (
+    currentToken: Token,
+    previousToken: Token | null,
+    lastCharInResult: string
+  ): boolean => {
+    // Already has space
+    if (lastCharInResult === ' ') return false;
+
+    // At start of line - no space needed
+    if (lastCharInResult === '') return false;
+
+    // No previous token
+    if (!previousToken) return false;
+
+    // Never space before these
+    if (currentToken.type === TokenType.RPAREN ||
+        currentToken.type === TokenType.RBRACKET ||
+        currentToken.type === TokenType.COMMA) {
+      return false;
+    }
+
+    // Never space after these
+    if (lastCharInResult === '(' || lastCharInResult === '[') {
+      return false;
+    }
+
+    // No space between function name and opening paren
+    const prevIsCallable = previousToken.type === TokenType.IDENTIFIER ||
+                           previousToken.type === TokenType.KEYWORD;
+    if (currentToken.type === TokenType.LPAREN && prevIsCallable) {
+      return false;
+    }
+
+    // No space between unary operators (! or -) and opening paren
+    const prevIsUnary = previousToken.type === TokenType.OPERATOR &&
+                        (previousToken.value === '!' || previousToken.value === '-');
+    if (currentToken.type === TokenType.LPAREN && prevIsUnary) {
+      return false;
+    }
+
+    // Default: add space
+    return true;
+  };
+
+  /**
+   * Convert a sequence of tokens to a formatted string.
+   * Applies spacing rules and handles special cases like unary/binary minus.
+   */
   const tokensToString = (toks: Token[], prevTokenBeforeLine?: Token | null): string => {
     let result = '';
 
@@ -55,77 +132,126 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       const tok = toks[i];
       if (tok.type === TokenType.NEWLINE) continue;
 
-      // Special handling for minus at line start
-      if (tok.type === TokenType.OPERATOR && tok.value === '-' && result.length === 0) {
-        const nextTok = i + 1 < toks.length ? toks[i + 1] : null;
-        if (nextTok?.type === TokenType.NUMBER) {
-          // Check previous token before this line to determine if it's binary or unary
-          // Binary if previous was: number, identifier, ), ]
-          // Unary if previous was: (, [, ,, operator, or nothing
-          const isBinaryMinus = prevTokenBeforeLine && (
-            prevTokenBeforeLine.type === TokenType.NUMBER ||
-            prevTokenBeforeLine.type === TokenType.IDENTIFIER ||
-            prevTokenBeforeLine.type === TokenType.RPAREN ||
-            prevTokenBeforeLine.type === TokenType.RBRACKET
-          );
+      const prevTok = i > 0 ? toks[i - 1] : (prevTokenBeforeLine ?? null);
+      const nextTok = i + 1 < toks.length ? toks[i + 1] : null;
+      const lastChar = result.length > 0 ? result[result.length - 1] : '';
 
-          if (isBinaryMinus) {
-            // Binary minus: add space after it
-            result += '- ';
-            continue;
-          }
-          // Otherwise it's unary minus, process normally
+      // Special case: Minus at line start followed by number
+      // Determine if binary (subtraction) or unary (negative) based on previous line context
+      if (tok.type === TokenType.OPERATOR && tok.value === '-' &&
+          result.length === 0 && nextTok?.type === TokenType.NUMBER) {
+        const isBinaryMinus = isValueToken(prevTokenBeforeLine ?? null);
+        if (isBinaryMinus) {
+          result += '- ';
+          continue;
+        }
+        // Otherwise unary, handle normally
+      }
+
+      // Special case: Number after minus - check if minus is unary
+      const prevIsMinus = prevTok?.type === TokenType.OPERATOR && prevTok.value === '-';
+      if (prevIsMinus && tok.type === TokenType.NUMBER) {
+        const beforeMinus = i >= 2 ? toks[i - 2] : (prevTokenBeforeLine ?? null);
+        if (isMinusUnary(beforeMinus)) {
+          // Unary minus: no space before number
+          result += tok.value;
+          continue;
         }
       }
 
-      // Check if previous token was an operator or minus sign
-      const prevTok = i > 0 ? toks[i - 1] : null;
+      // Apply spacing rules
+      const needsSpace = needsSpaceBefore(tok, prevTok, lastChar);
 
-      // Check if this is unary minus (negative number) vs binary minus (subtraction)
-      // Unary minus: after operator, lparen, comma, lbracket
-      // Binary minus: after number, identifier, rparen, rbracket
-      const prevIsMinus = prevTok?.type === TokenType.OPERATOR && prevTok?.value === '-';
+      // Special case: Always space before comments
+      const forceSpace = tok.type === TokenType.COMMENT && result.length > 0;
 
-      const isUnaryMinus = prevIsMinus && tok.type === TokenType.NUMBER &&
-        (i < 2 ||
-         (toks[i - 2]?.type === TokenType.OPERATOR) ||
-         (toks[i - 2]?.type === TokenType.LPAREN) ||
-         (toks[i - 2]?.type === TokenType.COMMA) ||
-         (toks[i - 2]?.type === TokenType.LBRACKET));
+      // Special case: Always space after comma
+      const spaceAfterComma = lastChar === ',';
 
-      // Don't add space between unary minus and number
-      const skipSpaceForUnaryMinus = isUnaryMinus;
-
-      // Always add space after comma
-      const needsSpaceAfterComma = result.length > 0 && result[result.length - 1] === ',';
-
-      // Check if previous token was identifier/keyword (function name)
-      const prevIsIdentifier = prevTok?.type === TokenType.IDENTIFIER || prevTok?.type === TokenType.KEYWORD;
-
-      // Check if previous token is ! operator
-      const prevIsNot = prevTok?.type === TokenType.OPERATOR && prevTok?.value === '!';
-
-      // Add space before token if needed
-      const needsSpace = result.length > 0 &&
-          result[result.length - 1] !== '(' &&
-          result[result.length - 1] !== '[' &&
-          result[result.length - 1] !== ' ' &&
-          !(tok.type === TokenType.LPAREN && prevIsIdentifier) &&  // No space between function name and (
-          !(tok.type === TokenType.LPAREN && prevIsNot) &&  // No space between ! and (
-          tok.type !== TokenType.RPAREN &&  // No space before )
-          tok.type !== TokenType.RBRACKET && // No space before ]
-          tok.type !== TokenType.COMMA;      // No space before ,
-
-      // Always add space before comment if there's content before it
-      const needsSpaceBeforeComment = tok.type === TokenType.COMMENT && result.length > 0;
-
-      if ((needsSpace || needsSpaceBeforeComment || needsSpaceAfterComma) && !skipSpaceForUnaryMinus) {
+      if (needsSpace || forceSpace || spaceAfterComma) {
         result += ' ';
       }
 
       result += tok.value;
     }
     return result;
+  };
+
+  /**
+   * Determines if we should break the line before the current token.
+   * This encapsulates the line breaking rules for logical expressions.
+   *
+   * Rules:
+   * 1. &&(( pattern: Break before ( when && is followed by nested parens
+   *    Rationale: && connects conditions, and (( signals a complex nested condition
+   * 2. ) || pattern: Break before || when ) is followed by || but not (
+   *    Rationale: ) || ( are peer alternatives (same level), but ) || <other> are different structures
+   */
+  const shouldBreakBeforeToken = (
+    currentToken: Token,
+    lineTokens: Token[],
+    lookAheadToken: Token | null
+  ): boolean => {
+    if (lineTokens.length === 0) return false;
+
+    const lastInLine = lineTokens[lineTokens.length - 1];
+
+    // Rule 1: Break before ( if previous is && and next is also (
+    // This creates &&\n(( for complex nested conditions
+    if (currentToken.type === TokenType.LPAREN) {
+      if (lastInLine.type === TokenType.OPERATOR && lastInLine.value === '&&') {
+        if (lookAheadToken?.type === TokenType.LPAREN) {
+          return true;
+        }
+      }
+    }
+
+    // Rule 2: Break before || if previous is ) and next is not (
+    // Keep ) || ( together (peer alternatives at same level)
+    // But separate )\n|| when connecting to different structures
+    if (currentToken.type === TokenType.OPERATOR && currentToken.value === '||') {
+      if (lastInLine.type === TokenType.RPAREN) {
+        if (lookAheadToken?.type !== TokenType.LPAREN) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  };
+
+  /**
+   * Checks if a closing paren should be followed by || ( on the same line.
+   * This handles the ") || (" peer alternatives pattern.
+   *
+   * Returns the tokens and index to skip if pattern matches, null otherwise.
+   */
+  const checkPeerAlternativesPattern = (
+    currentIdx: number
+  ): { nextToken: Token; skipToIdx: number } | null => {
+    // Look for || after current )
+    let nextIdx = currentIdx + 1;
+    while (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.NEWLINE) {
+      nextIdx++;
+    }
+    const nextToken = nextIdx < tokens.length ? tokens[nextIdx] : null;
+
+    if (nextToken?.type !== TokenType.OPERATOR || nextToken.value !== '||') {
+      return null;
+    }
+
+    // Look for ( after ||
+    let next2Idx = nextIdx + 1;
+    while (next2Idx < tokens.length && tokens[next2Idx].type === TokenType.NEWLINE) {
+      next2Idx++;
+    }
+    const next2Token = next2Idx < tokens.length ? tokens[next2Idx] : null;
+
+    if (next2Token?.type === TokenType.LPAREN) {
+      return { nextToken: next2Token, skipToIdx: next2Idx + 1 };
+    }
+
+    return null;
   };
 
   // Check if there's immediate nesting (paren/function right after opening)
@@ -552,29 +678,15 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
         if (prevLine && prevLine.trim().endsWith(')')) {
           indentLevel--;
 
-          // Check if next token is || ( pattern - if so, include on same line
-          let nextIdx = i + 1;
-          while (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.NEWLINE) {
-            nextIdx++;
-          }
-          const nextToken = nextIdx < tokens.length ? tokens[nextIdx] : null;
-
-          if (nextToken?.type === TokenType.OPERATOR && nextToken.value === '||') {
-            // Look further to see if ( follows ||
-            let next2Idx = nextIdx + 1;
-            while (next2Idx < tokens.length && tokens[next2Idx].type === TokenType.NEWLINE) {
-              next2Idx++;
-            }
-            const next2Token = next2Idx < tokens.length ? tokens[next2Idx] : null;
-
-            if (next2Token?.type === TokenType.LPAREN) {
-              // Output ) || ( on same line
-              lines.push(indent() + ') || (');
-              lastProcessedToken = next2Token;
-              i = next2Idx + 1;
-              indentLevel++;
-              continue;
-            }
+          // Check for peer alternatives pattern: ) || (
+          const peerPattern = checkPeerAlternativesPattern(i);
+          if (peerPattern) {
+            // Output ) || ( on same line (peer alternatives at same level)
+            lines.push(indent() + ') || (');
+            lastProcessedToken = peerPattern.nextToken;
+            i = peerPattern.skipToIdx;
+            indentLevel++;
+            continue;
           }
 
           lines.push(indent() + ')');
@@ -603,39 +715,18 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
         break;
       }
 
-      // Stop before ( if previous is && and next token after ( is also (
-      // This creates the pattern: &&\n( when we have &&((
-      if (t.type === TokenType.LPAREN && lineTokens.length > 0) {
-        const lastToken = lineTokens[lineTokens.length - 1];
-        if (lastToken.type === TokenType.OPERATOR && lastToken.value === '&&') {
-          // Look ahead to see if next token is also (
-          let nextIdx = i + 1;
-          while (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.NEWLINE) {
-            nextIdx++;
-          }
-          const nextToken = nextIdx < tokens.length ? tokens[nextIdx] : null;
-          if (nextToken?.type === TokenType.LPAREN) {
-            // We have &&(( pattern - break before this (
-            break;
-          }
-        }
+      // Check if we should break before this token based on logical expression structure
+      let lookAheadToken: Token | null = null;
+      let lookAheadIdx = i + 1;
+      while (lookAheadIdx < tokens.length && tokens[lookAheadIdx].type === TokenType.NEWLINE) {
+        lookAheadIdx++;
+      }
+      if (lookAheadIdx < tokens.length) {
+        lookAheadToken = tokens[lookAheadIdx];
       }
 
-      // Stop before || operator if previous token is ) AND next token is not (
-      // This creates the pattern: )\n|| but keeps ) || ( on same line
-      if (t.type === TokenType.OPERATOR && t.value === '||' && lineTokens.length > 0) {
-        const lastToken = lineTokens[lineTokens.length - 1];
-        // Look ahead to see what comes after ||
-        let nextIdx = i + 1;
-        while (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.NEWLINE) {
-          nextIdx++;
-        }
-        const nextToken = nextIdx < tokens.length ? tokens[nextIdx] : null;
-
-        // Break only if previous is ) and next is NOT (
-        if (lastToken.type === TokenType.RPAREN && nextToken?.type !== TokenType.LPAREN) {
-          break;
-        }
+      if (shouldBreakBeforeToken(t, lineTokens, lookAheadToken)) {
+        break;
       }
 
       // Stop at function call if it should be expanded
