@@ -221,37 +221,52 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
   };
 
   /**
-   * Checks if a closing paren should be followed by || ( on the same line.
-   * This handles the ") || (" peer alternatives pattern.
-   *
-   * Returns the tokens and index to skip if pattern matches, null otherwise.
+   * Helper to look ahead past newlines and get the next meaningful token
    */
-  const checkPeerAlternativesPattern = (
+  const peekNextToken = (fromIdx: number): { token: Token | null; idx: number } => {
+    let idx = fromIdx;
+    while (idx < tokens.length && tokens[idx].type === TokenType.NEWLINE) {
+      idx++;
+    }
+    return { token: idx < tokens.length ? tokens[idx] : null, idx };
+  };
+
+  /**
+   * Determines what should follow a closing paren based on language structure.
+   * This encapsulates the grammar rules for closing parentheses.
+   *
+   * Language structures:
+   * 1. Function argument ending: `)` + `,` = "),`
+   *    Rationale: In function calls like IF(cond, value1, value2), comma separates arguments
+   * 2. Peer alternatives: `)` + `||` + `(` = ") || ("
+   *    Rationale: (cond1) || (cond2) are alternatives at the same logical level
+   * 3. Simple closing: Just ")"
+   *    Rationale: Default case, no special continuation
+   *
+   * Returns: { suffix: string, skipToIdx: number }
+   * - suffix: what to append after ")" (e.g., ",", " || (", "")
+   * - skipToIdx: index to continue processing from
+   */
+  const getClosingParenSuffix = (
     currentIdx: number
-  ): { nextToken: Token; skipToIdx: number } | null => {
-    // Look for || after current )
-    let nextIdx = currentIdx + 1;
-    while (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.NEWLINE) {
-      nextIdx++;
-    }
-    const nextToken = nextIdx < tokens.length ? tokens[nextIdx] : null;
+  ): { suffix: string; skipToIdx: number } => {
+    const { token: next1, idx: idx1 } = peekNextToken(currentIdx + 1);
 
-    if (nextToken?.type !== TokenType.OPERATOR || nextToken.value !== '||') {
-      return null;
+    // Structure 1: Function argument ending "),<next-arg>"
+    if (next1?.type === TokenType.COMMA) {
+      return { suffix: ',', skipToIdx: idx1 + 1 };
     }
 
-    // Look for ( after ||
-    let next2Idx = nextIdx + 1;
-    while (next2Idx < tokens.length && tokens[next2Idx].type === TokenType.NEWLINE) {
-      next2Idx++;
-    }
-    const next2Token = next2Idx < tokens.length ? tokens[next2Idx] : null;
-
-    if (next2Token?.type === TokenType.LPAREN) {
-      return { nextToken: next2Token, skipToIdx: next2Idx + 1 };
+    // Structure 2: Peer alternatives ") || ("
+    if (next1?.type === TokenType.OPERATOR && next1.value === '||') {
+      const { token: next2, idx: idx2 } = peekNextToken(idx1 + 1);
+      if (next2?.type === TokenType.LPAREN) {
+        return { suffix: ' || (', skipToIdx: idx2 + 1 };
+      }
     }
 
-    return null;
+    // Structure 3: Simple closing
+    return { suffix: '', skipToIdx: currentIdx + 1 };
   };
 
   // Check if there's immediate nesting (paren/function right after opening)
@@ -380,37 +395,29 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
           }
           indentLevel--;
 
-          // Build closing line with ) and check for trailing comma or comment
-          let closingLine = indent() + ')';
-          let nextIdx = idx + 1;
+          // Determine what should follow the closing paren based on language structure
+          const { suffix, skipToIdx } = getClosingParenSuffix(idx);
+          let closingLine = indent() + ')' + suffix;
 
-          // Skip newlines to find next meaningful token
-          while (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.NEWLINE) {
-            nextIdx++;
-          }
-
-          // Check if next token is comma - include it on same line
-          if (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.COMMA) {
-            closingLine += ',';
+          // Special case: check for inline comment immediately after ) (no newline)
+          // This is separate from suffix logic as it's about inline documentation
+          const immediateNext = idx + 1;
+          if (immediateNext < tokens.length && tokens[immediateNext].type === TokenType.COMMENT) {
+            closingLine = indent() + ')' + ' ' + tokens[immediateNext].value;
             lines.push(closingLine);
             lastOutputWasComment = false;
-            return nextIdx + 1; // Skip past the comma
-          }
-
-          // Check if there's an inline comment immediately after the closing paren (no newline in between)
-          nextIdx = idx + 1;
-          // Only attach comment if it's the immediate next token (not after newline)
-          if (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.COMMENT) {
-            // Append inline comment to closing paren
-            closingLine += ' ' + tokens[nextIdx].value;
-            lines.push(closingLine);
-            lastOutputWasComment = false;
-            return nextIdx + 1; // Skip past the comment
+            return immediateNext + 1;
           }
 
           lines.push(closingLine);
           lastOutputWasComment = false;
-          return idx + 1;
+
+          // If we added peer alternatives ") || (", increase indent for the new paren group
+          if (suffix === ' || (') {
+            indentLevel++;
+          }
+
+          return skipToIdx;
         } else {
           currentArg.push(tok);
           consecutiveNewlines = 0;
@@ -694,34 +701,20 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
         if (prevLine && prevLine.trim().endsWith(')')) {
           indentLevel--;
 
-          // Check for peer alternatives pattern: ) || (
-          const peerPattern = checkPeerAlternativesPattern(i);
-          if (peerPattern) {
-            // Output ) || ( on same line (peer alternatives at same level)
-            lines.push(indent() + ') || (');
-            lastProcessedToken = peerPattern.nextToken;
-            i = peerPattern.skipToIdx;
+          // Determine what should follow the closing paren based on language structure
+          const { suffix, skipToIdx } = getClosingParenSuffix(i);
+          const lineContent = indent() + ')' + suffix;
+          lines.push(lineContent);
+
+          // Update position and last processed token
+          lastProcessedToken = tokens[skipToIdx - 1] || token;
+          i = skipToIdx;
+
+          // If we added peer alternatives ") || (", increase indent for the new paren group
+          if (suffix === ' || (') {
             indentLevel++;
-            continue;
           }
 
-          // Output ) and check if there's a comma that should be on the same line
-          let lineContent = indent() + ')';
-          let nextIdx = i + 1;
-          // Skip newlines to find next meaningful token
-          while (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.NEWLINE) {
-            nextIdx++;
-          }
-          // If next token is comma, include it on the same line
-          if (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.COMMA) {
-            lineContent += ',';
-            i = nextIdx + 1; // Skip past the comma
-            lastProcessedToken = tokens[nextIdx];
-          } else {
-            i++;
-            lastProcessedToken = token; // RPAREN
-          }
-          lines.push(lineContent);
           continue;
         }
       }
@@ -746,15 +739,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       }
 
       // Check if we should break before this token based on logical expression structure
-      let lookAheadToken: Token | null = null;
-      let lookAheadIdx = i + 1;
-      while (lookAheadIdx < tokens.length && tokens[lookAheadIdx].type === TokenType.NEWLINE) {
-        lookAheadIdx++;
-      }
-      if (lookAheadIdx < tokens.length) {
-        lookAheadToken = tokens[lookAheadIdx];
-      }
-
+      const { token: lookAheadToken } = peekNextToken(i + 1);
       if (shouldBreakBeforeToken(t, lineTokens, lookAheadToken)) {
         break;
       }
