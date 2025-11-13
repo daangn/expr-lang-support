@@ -428,10 +428,10 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       } else if (isFunctionCall(idx)) {
         // Nested function call - check if it needs expansion
         const nestedNextIdx = idx + 1;
-        const { length: nestedLength, hasImmediateNesting: nestedHasImmediate, hasNewlines: nestedHasNewlines } = measureToClosingParen(nestedNextIdx);
+        const { length: nestedLength, hasNewlines: nestedHasNewlines } = measureToClosingParen(nestedNextIdx);
 
-        // Only expand if it's long, has immediate nesting, or is both multiline AND long
-        if (nestedLength > opts.maxLineLength || nestedHasImmediate || (nestedHasNewlines && nestedLength > opts.maxLineLength)) {
+        // Only expand if it's long or is multiline
+        if (nestedLength > opts.maxLineLength || nestedHasNewlines) {
           // Nested function needs expansion
           if (currentArg.length > 0) {
             lines.push(indent() + tokensToString(currentArg));
@@ -490,10 +490,10 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
     // Handle function calls
     if (isFunctionCall(i)) {
       const nextIdx = i + 1;
-      const { length, hasImmediateNesting, hasNewlines } = measureToClosingParen(nextIdx);
+      const { length, hasNewlines } = measureToClosingParen(nextIdx);
 
-      // Expand if long, has immediate nesting, or was already multiline
-      if (length > opts.maxLineLength || hasImmediateNesting || hasNewlines) {
+      // Expand if long or was already multiline
+      if (length > opts.maxLineLength || hasNewlines) {
         i = formatFunctionMultiline(i);
         // After multiline function, the last processed token is RPAREN
         if (i > 0) lastProcessedToken = tokens[i - 1];
@@ -514,8 +514,8 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       }
       const hasFunctionInside = isFunctionCall(nextIdx);
 
-      // Expand if: long, has immediate nesting, or (multiline AND long)
-      if (length > opts.maxLineLength || hasImmediateNesting || (hasNewlines && length > opts.maxLineLength)) {
+      // Expand if: long or was multiline
+      if (length > opts.maxLineLength || hasNewlines) {
         // Check if previous token was an operator
         const prevIsOp = prevTokenIsOperator(i);
 
@@ -547,6 +547,32 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
         const prevLine = lines[lines.length - 1];
         if (prevLine && prevLine.trim().endsWith(')')) {
           indentLevel--;
+
+          // Check if next token is || ( pattern - if so, include on same line
+          let nextIdx = i + 1;
+          while (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.NEWLINE) {
+            nextIdx++;
+          }
+          const nextToken = nextIdx < tokens.length ? tokens[nextIdx] : null;
+
+          if (nextToken?.type === TokenType.OPERATOR && nextToken.value === '||') {
+            // Look further to see if ( follows ||
+            let next2Idx = nextIdx + 1;
+            while (next2Idx < tokens.length && tokens[next2Idx].type === TokenType.NEWLINE) {
+              next2Idx++;
+            }
+            const next2Token = next2Idx < tokens.length ? tokens[next2Idx] : null;
+
+            if (next2Token?.type === TokenType.LPAREN) {
+              // Output ) || ( on same line
+              lines.push(indent() + ') || (');
+              lastProcessedToken = next2Token;
+              i = next2Idx + 1;
+              indentLevel++;
+              continue;
+            }
+          }
+
           lines.push(indent() + ')');
           lastProcessedToken = token; // RPAREN
           i++;
@@ -573,11 +599,46 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
         break;
       }
 
+      // Stop before ( if previous is && and next token after ( is also (
+      // This creates the pattern: &&\n( when we have &&((
+      if (t.type === TokenType.LPAREN && lineTokens.length > 0) {
+        const lastToken = lineTokens[lineTokens.length - 1];
+        if (lastToken.type === TokenType.OPERATOR && lastToken.value === '&&') {
+          // Look ahead to see if next token is also (
+          let nextIdx = i + 1;
+          while (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.NEWLINE) {
+            nextIdx++;
+          }
+          const nextToken = nextIdx < tokens.length ? tokens[nextIdx] : null;
+          if (nextToken?.type === TokenType.LPAREN) {
+            // We have &&(( pattern - break before this (
+            break;
+          }
+        }
+      }
+
+      // Stop before || operator if previous token is ) AND next token is not (
+      // This creates the pattern: )\n|| but keeps ) || ( on same line
+      if (t.type === TokenType.OPERATOR && t.value === '||' && lineTokens.length > 0) {
+        const lastToken = lineTokens[lineTokens.length - 1];
+        // Look ahead to see what comes after ||
+        let nextIdx = i + 1;
+        while (nextIdx < tokens.length && tokens[nextIdx].type === TokenType.NEWLINE) {
+          nextIdx++;
+        }
+        const nextToken = nextIdx < tokens.length ? tokens[nextIdx] : null;
+
+        // Break only if previous is ) and next is NOT (
+        if (lastToken.type === TokenType.RPAREN && nextToken?.type !== TokenType.LPAREN) {
+          break;
+        }
+      }
+
       // Stop at function call if it should be expanded
       if (isFunctionCall(i)) {
         const nextIdx = i + 1;
-        const { length, hasImmediateNesting, hasNewlines } = measureToClosingParen(nextIdx);
-        if (length > opts.maxLineLength || hasImmediateNesting || (hasNewlines && length > opts.maxLineLength)) {
+        const { length, hasNewlines } = measureToClosingParen(nextIdx);
+        if (length > opts.maxLineLength || hasNewlines) {
           break; // Stop here, will be processed on next iteration
         }
       }
@@ -589,9 +650,9 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
           nextIdx++;
         }
         if (isFunctionCall(nextIdx)) {
-          // Measure from the opening paren to include immediate nesting check
-          const { length, hasImmediateNesting, hasNewlines } = measureToClosingParen(i);
-          if (length > opts.maxLineLength || hasImmediateNesting || (hasNewlines && length > opts.maxLineLength)) {
+          // Measure from the opening paren
+          const { length, hasNewlines } = measureToClosingParen(i);
+          if (length > opts.maxLineLength || hasNewlines) {
             break; // Stop here, will be processed on next iteration
           }
         }
