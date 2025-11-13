@@ -102,12 +102,16 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       // Check if previous token was identifier/keyword (function name)
       const prevIsIdentifier = prevTok?.type === TokenType.IDENTIFIER || prevTok?.type === TokenType.KEYWORD;
 
+      // Check if previous token is ! operator
+      const prevIsNot = prevTok?.type === TokenType.OPERATOR && prevTok?.value === '!';
+
       // Add space before token if needed
       const needsSpace = result.length > 0 &&
           result[result.length - 1] !== '(' &&
           result[result.length - 1] !== '[' &&
           result[result.length - 1] !== ' ' &&
           !(tok.type === TokenType.LPAREN && prevIsIdentifier) &&  // No space between function name and (
+          !(tok.type === TokenType.LPAREN && prevIsNot) &&  // No space between ! and (
           tok.type !== TokenType.RPAREN &&  // No space before )
           tok.type !== TokenType.RBRACKET && // No space before ]
           tok.type !== TokenType.COMMA;      // No space before ,
