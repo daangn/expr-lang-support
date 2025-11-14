@@ -10,10 +10,64 @@ const DEFAULT_OPTIONS: FormatOptions = {
   maxLineLength: 120,
 };
 
+/**
+ * Operator constants for consistent handling throughout the formatter
+ */
+const OPERATORS = {
+  // Logical operators
+  OR: '||',
+  AND: '&&',
+
+  // Arithmetic operators
+  PLUS: '+',
+  MINUS: '-',
+  MULTIPLY: '*',
+  DIVIDE: '/',
+  POWER: '**',
+
+  // Comparison operators
+  EQ: '==',
+  NEQ: '!=',
+  LT: '<',
+  GT: '>',
+  LTE: '<=',
+  GTE: '>=',
+
+  // Other operators
+  IN: 'in',
+  MATCHES: 'matches',
+} as const;
+
+/**
+ * Operator groups for categorization
+ */
+const OPERATOR_GROUPS = {
+  LOGICAL: [OPERATORS.OR, OPERATORS.AND],
+  ARITHMETIC: [OPERATORS.PLUS, OPERATORS.MINUS, OPERATORS.MULTIPLY, OPERATORS.DIVIDE, OPERATORS.POWER],
+  COMPARISON: [OPERATORS.EQ, OPERATORS.NEQ, OPERATORS.LT, OPERATORS.GT, OPERATORS.LTE, OPERATORS.GTE],
+} as const;
+
 export function format(input: string, options: Partial<FormatOptions> = {}): string {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   const tokens = tokenize(input).filter(t => t.type !== TokenType.EOF);
 
+  /**
+   * Operator type checking helpers
+   */
+  const isOperator = (token: Token | null, operatorValue: string): boolean => {
+    return token?.type === TokenType.OPERATOR && token.value === operatorValue;
+  };
+
+  const isArithmeticOperator = (token: Token | null): boolean => {
+    if (!token || token.type !== TokenType.OPERATOR) return false;
+    return (OPERATOR_GROUPS.ARITHMETIC as readonly string[]).includes(token.value);
+  };
+
+  // Reserved for future use
+  // const isLogicalOperator = (token: Token | null): boolean => {
+  //   if (!token || token.type !== TokenType.OPERATOR) return false;
+  //   return (OPERATOR_GROUPS.LOGICAL as readonly string[]).includes(token.value);
+  // };
 
   const lines: string[] = [];
   let indentLevel = 0;
@@ -104,9 +158,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
         return true;
       }
       // Binary after arithmetic operator if line has more tokens (multi-line arithmetic)
-      if (prevTokenBeforeLine.type === TokenType.OPERATOR &&
-          ['+', '-', '*', '/'].includes(prevTokenBeforeLine.value) &&
-          minusIdx + 2 < tokensInLine.length) {
+      if (isArithmeticOperator(prevTokenBeforeLine) && minusIdx + 2 < tokensInLine.length) {
         return true;
       }
     }
@@ -114,8 +166,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
     // No clear context, check pattern: - NUMBER * IDENTIFIER (not function call)
     if (minusIdx + 3 < tokensInLine.length &&
         tokensInLine[minusIdx + 1]?.type === TokenType.NUMBER &&
-        tokensInLine[minusIdx + 2]?.type === TokenType.OPERATOR &&
-        tokensInLine[minusIdx + 2]?.value === '*' &&
+        isOperator(tokensInLine[minusIdx + 2], OPERATORS.MULTIPLY) &&
         tokensInLine[minusIdx + 3]?.type === TokenType.IDENTIFIER &&
         !(minusIdx + 4 < tokensInLine.length && tokensInLine[minusIdx + 4]?.type === TokenType.LPAREN)) {
       return true;
@@ -187,7 +238,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       const lastChar = result.length > 0 ? result[result.length - 1] : '';
 
       // Handle minus operator spacing: binary (subtraction) vs unary (negative)
-      if (tok.type === TokenType.OPERATOR && tok.value === '-') {
+      if (isOperator(tok, OPERATORS.MINUS)) {
         // Case 1: Minus at line start followed by number
         if (result.length === 0 && nextTok?.type === TokenType.NUMBER) {
           if (isMinusBinaryAtLineStart(prevTokenBeforeLine ?? null, toks, i)) {
@@ -203,13 +254,13 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
                   prevTok.type === TokenType.COMMA ||
                   prevTok.type === TokenType.LBRACKET)) {
           // Unary: no space before minus
-          result += '-';
+          result += OPERATORS.MINUS;
           continue;
         }
       }
 
       // Handle number after unary minus: no space
-      if (tok.type === TokenType.NUMBER && prevTok?.type === TokenType.OPERATOR && prevTok.value === '-') {
+      if (tok.type === TokenType.NUMBER && isOperator(prevTok, OPERATORS.MINUS)) {
         const beforeMinus = i >= 2 ? toks[i - 2] : (prevTokenBeforeLine ?? null);
         if (isMinusUnary(beforeMinus)) {
           result += tok.value;
@@ -258,7 +309,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
     // Rule 1: Break before ( if previous is && and next is also (
     // This creates &&\n(( for complex nested conditions
     if (currentToken.type === TokenType.LPAREN) {
-      if (lastInLine.type === TokenType.OPERATOR && lastInLine.value === '&&') {
+      if (isOperator(lastInLine, OPERATORS.AND)) {
         if (lookAheadToken?.type === TokenType.LPAREN) {
           return true;
         }
@@ -267,7 +318,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
 
     // Rule 2: Break before || if previous is ) AND there's something other than inline tokens after ||
     // This preserves inline || expressions like (a) || (b) but breaks when the input has newlines
-    if (currentToken.type === TokenType.OPERATOR && currentToken.value === '||') {
+    if (isOperator(currentToken, OPERATORS.OR)) {
       if (lastInLine.type === TokenType.RPAREN) {
         // Check what comes after ||: if it's a NEWLINE or if the next meaningful token is NOT on the same line
         const nextIdx = currentIdx + 1;
@@ -728,7 +779,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       // Rationale: || ( already started a new context, inner content should use line collection
       const skipExpansion = lastProcessedToken &&
                            (lastProcessedToken.type === TokenType.LPAREN ||
-                            (lastProcessedToken.type === TokenType.OPERATOR && lastProcessedToken.value === '||'));
+                            isOperator(lastProcessedToken, OPERATORS.OR));
 
       if (skipExpansion) {
         // Fall through to line collection
@@ -753,14 +804,14 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
         // Rationale: || ( already starts a new context, inner ( is not "nested"
         const skipNested = lastProcessedToken &&
                           (lastProcessedToken.type === TokenType.LPAREN ||
-                           (lastProcessedToken.type === TokenType.OPERATOR && lastProcessedToken.value === '||'));
+                           isOperator(lastProcessedToken, OPERATORS.OR));
         const isNested = isNestedParenExpression(i) && !skipNested;
 
         if (prevIsOp) {
           // Check if the operator is || - if so, don't append ( on same line
           // Rationale: || should have its operands on separate lines
           const prevOp = getPrevOperator(i);
-          if (prevOp === '||') {
+          if (prevOp === OPERATORS.OR) {
             // Put ( on new line
             lines.push(indent() + '(');
             indentLevel++;
@@ -876,7 +927,7 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
         // But NOT if we just processed ) || ( or || ( pattern
         const skipNested = lastProcessedToken &&
                           (lastProcessedToken.type === TokenType.LPAREN ||
-                           (lastProcessedToken.type === TokenType.OPERATOR && lastProcessedToken.value === '||'));
+                           isOperator(lastProcessedToken, OPERATORS.OR));
         if (lineTokens.length > 0 && !skipNested) {
           const lastToken = lineTokens[lineTokens.length - 1];
           if (lastToken.type === TokenType.OPERATOR && isNestedParenExpression(i)) {
@@ -970,15 +1021,12 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
           }
 
           // Rule 2: Arithmetic operators at line start indicate multi-line arithmetic
-          if (lineTokens[0].type === TokenType.OPERATOR &&
-              (lineTokens[0].value === '+' || lineTokens[0].value === '-')) {
+          if (isOperator(lineTokens[0], OPERATORS.PLUS) || isOperator(lineTokens[0], OPERATORS.MINUS)) {
             return true;
           }
 
           // Rule 3: || followed by ( with newline between
-          if (prevTokenBeforeLine?.type === TokenType.OPERATOR &&
-              prevTokenBeforeLine.value === '||' &&
-              lineTokens[0].type === TokenType.LPAREN) {
+          if (isOperator(prevTokenBeforeLine, OPERATORS.OR) && lineTokens[0].type === TokenType.LPAREN) {
             const hasNewlineBetween = lineStartIdx > 0 && tokens[lineStartIdx - 1].type === TokenType.NEWLINE;
             return hasNewlineBetween;
           }
