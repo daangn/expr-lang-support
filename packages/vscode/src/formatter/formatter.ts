@@ -247,11 +247,10 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
           }
           // Otherwise unary, will be handled by normal spacing rules below
         }
-        // Case 2: Unary minus within line (after LPAREN, COMMA, LBRACKET)
+        // Case 2: Unary minus within line (after LPAREN, LBRACKET)
         // Note: after other operators like ==, we want normal spacing
         else if (prevTok &&
                  (prevTok.type === TokenType.LPAREN ||
-                  prevTok.type === TokenType.COMMA ||
                   prevTok.type === TokenType.LBRACKET)) {
           // Unary: no space before minus
           result += OPERATORS.MINUS;
