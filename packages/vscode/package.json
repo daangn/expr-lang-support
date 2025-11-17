@@ -95,6 +95,9 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "package": "npm run build && vsce package --no-dependencies",
+    "publish:vscode": "vsce publish",
+    "publish:openvsx": "ovsx publish",
+    "publish:all": "npm run publish:vscode && npm run publish:openvsx",
     "test": "jest",
     "test:watch": "jest --watch"
   },

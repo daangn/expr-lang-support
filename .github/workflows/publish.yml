@@ -65,6 +65,12 @@ jobs:
           VSCE_PAT: ${{ secrets.VSCE_MARKETPLACE_PAT }}
         run: npx vsce publish -p $VSCE_PAT
 
+      - name: Publish to OpenVSX
+        working-directory: packages/vscode
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_MARKETPLACE_PAT }}
+        run: npx ovsx publish -p $OVSX_PAT
+
       - name: Create GitHub Release
         id: create_release
         uses: actions/create-release@v1
