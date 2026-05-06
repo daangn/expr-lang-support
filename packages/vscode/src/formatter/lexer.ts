@@ -5,6 +5,8 @@ export enum TokenType {
   RPAREN = 'RPAREN',
   LBRACKET = 'LBRACKET',
   RBRACKET = 'RBRACKET',
+  LBRACE = 'LBRACE',
+  RBRACE = 'RBRACE',
   COMMA = 'COMMA',
   NEWLINE = 'NEWLINE',
   OPERATOR = 'OPERATOR',
@@ -22,7 +24,9 @@ export interface Token {
   col: number;
 }
 
-const KEYWORDS = new Set(['IF', 'in', 'and', 'or', 'not', 'let']);
+// 'IF' (uppercase) is the legacy custom function used in many existing files.
+// 'if' and 'else' (lowercase) are native Expr if-expression keywords.
+const KEYWORDS = new Set(['IF', 'if', 'else', 'in', 'and', 'or', 'not', 'let']);
 const OPERATORS = ['==', '!=', '>=', '<=', '>', '<', '&&', '||', '**', '+', '-', '*', '/', '%', '!'];
 
 export function tokenize(input: string): Token[] {
@@ -106,6 +110,20 @@ export function tokenize(input: string): Token[] {
     }
     if (char === ']') {
       tokens.push({ type: TokenType.RBRACKET, value: ']', line, col });
+      i++;
+      col++;
+      continue;
+    }
+
+    // Braces (native if/else block delimiters)
+    if (char === '{') {
+      tokens.push({ type: TokenType.LBRACE, value: '{', line, col });
+      i++;
+      col++;
+      continue;
+    }
+    if (char === '}') {
+      tokens.push({ type: TokenType.RBRACE, value: '}', line, col });
       i++;
       col++;
       continue;

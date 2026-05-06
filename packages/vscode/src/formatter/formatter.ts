@@ -77,13 +77,17 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
 
   const indent = () => ' '.repeat(indentLevel * opts.indentSize);
 
-  // Check if token at index is a function call (function name followed by LPAREN)
+  // Check if token at index is a function call (function name followed by LPAREN).
+  // Lowercase keywords ('if', 'else', 'in', 'and', 'or', 'not', 'let') aren't function calls.
+  // Only the legacy uppercase 'IF' is a callable keyword in this codebase.
   const isFunctionCall = (idx: number): boolean => {
     if (idx >= tokens.length) return false;
     const tok = tokens[idx];
     const nextTok = tokens[idx + 1];
-    return (tok.type === TokenType.IDENTIFIER || tok.type === TokenType.KEYWORD) &&
-           nextTok?.type === TokenType.LPAREN;
+    if (!(tok.type === TokenType.IDENTIFIER || tok.type === TokenType.KEYWORD)) return false;
+    if (nextTok?.type !== TokenType.LPAREN) return false;
+    if (tok.type === TokenType.KEYWORD && tok.value !== 'IF') return false;
+    return true;
   };
 
   // Get function name at index (assumes isFunctionCall returned true)
@@ -131,11 +135,12 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
   const isMinusUnary = (prevToken: Token | null): boolean => {
     if (!prevToken) return true; // Minus at start is unary
 
-    // Unary if previous token cannot be a value (after operators, opening brackets, comma)
+    // Unary if previous token cannot be a value (after operators, opening brackets, comma, brace)
     return prevToken.type === TokenType.OPERATOR ||
            prevToken.type === TokenType.LPAREN ||
            prevToken.type === TokenType.COMMA ||
-           prevToken.type === TokenType.LBRACKET;
+           prevToken.type === TokenType.LBRACKET ||
+           prevToken.type === TokenType.LBRACE;
   };
 
   /**
@@ -204,9 +209,12 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       return false;
     }
 
-    // No space between function name and opening paren
-    const prevIsCallable = previousToken.type === TokenType.IDENTIFIER ||
-                           previousToken.type === TokenType.KEYWORD;
+    // No space between function name and opening paren.
+    // Only 'IF' (uppercase, legacy custom function) is a callable keyword;
+    // native lowercase keywords ('if', 'else', 'in', 'and', 'or', 'not', 'let')
+    // must keep the space when followed by '(' — e.g. `if (x > 0)`, `not (a)`.
+    const prevIsCallableKeyword = previousToken.type === TokenType.KEYWORD && previousToken.value === 'IF';
+    const prevIsCallable = previousToken.type === TokenType.IDENTIFIER || prevIsCallableKeyword;
     if (currentToken.type === TokenType.LPAREN && prevIsCallable) {
       return false;
     }
@@ -739,6 +747,281 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
     return idx;
   };
 
+  // === Native if-expression helpers ===
+
+  const isIfKeyword = (t: Token | null): boolean => {
+    return !!t && t.type === TokenType.KEYWORD && t.value === 'if';
+  };
+
+  const isElseKeyword = (t: Token | null): boolean => {
+    return !!t && t.type === TokenType.KEYWORD && t.value === 'else';
+  };
+
+  // Returns info about whether tokens[idx] starts an if-expression.
+  // Either 'if' directly, or '(' immediately followed by 'if' (skipping newlines).
+  const isIfExpressionStart = (idx: number): { isIf: boolean; hasParen: boolean; ifIdx: number } => {
+    if (idx >= tokens.length) return { isIf: false, hasParen: false, ifIdx: -1 };
+    if (isIfKeyword(tokens[idx])) {
+      return { isIf: true, hasParen: false, ifIdx: idx };
+    }
+    if (tokens[idx].type === TokenType.LPAREN) {
+      let j = idx + 1;
+      while (j < tokens.length && tokens[j].type === TokenType.NEWLINE) j++;
+      if (j < tokens.length && isIfKeyword(tokens[j])) {
+        return { isIf: true, hasParen: true, ifIdx: j };
+      }
+    }
+    return { isIf: false, hasParen: false, ifIdx: -1 };
+  };
+
+  // Find matching '}' for the '{' at lbraceIdx.
+  const findMatchingRBrace = (lbraceIdx: number): number => {
+    let depth = 1;
+    for (let j = lbraceIdx + 1; j < tokens.length; j++) {
+      if (tokens[j].type === TokenType.LBRACE) depth++;
+      else if (tokens[j].type === TokenType.RBRACE) {
+        depth--;
+        if (depth === 0) return j;
+      }
+    }
+    return tokens.length - 1;
+  };
+
+  // Find the '{' that opens the 'then' block of an if-expression.
+  // Skips past nested () and [] in the condition.
+  const findIfThenLBrace = (ifIdx: number): number => {
+    let parenDepth = 0;
+    let bracketDepth = 0;
+    for (let j = ifIdx + 1; j < tokens.length; j++) {
+      const t = tokens[j];
+      if (t.type === TokenType.LPAREN) parenDepth++;
+      else if (t.type === TokenType.RPAREN) parenDepth--;
+      else if (t.type === TokenType.LBRACKET) bracketDepth++;
+      else if (t.type === TokenType.RBRACKET) bracketDepth--;
+      else if (t.type === TokenType.LBRACE && parenDepth === 0 && bracketDepth === 0) return j;
+    }
+    return -1;
+  };
+
+  interface IfExpressionStructure {
+    thenLBrace: number;
+    thenRBrace: number;
+    elseLBrace: number;
+    elseRBrace: number;
+    hasElse: boolean;
+  }
+
+  const findIfExpressionStructure = (ifIdx: number): IfExpressionStructure | null => {
+    const thenLBrace = findIfThenLBrace(ifIdx);
+    if (thenLBrace === -1) return null;
+    const thenRBrace = findMatchingRBrace(thenLBrace);
+
+    let k = thenRBrace + 1;
+    while (k < tokens.length && tokens[k].type === TokenType.NEWLINE) k++;
+    if (k < tokens.length && isElseKeyword(tokens[k])) {
+      let m = k + 1;
+      while (m < tokens.length && tokens[m].type === TokenType.NEWLINE) m++;
+      if (m < tokens.length && tokens[m].type === TokenType.LBRACE) {
+        const elseLBrace = m;
+        const elseRBrace = findMatchingRBrace(elseLBrace);
+        return { thenLBrace, thenRBrace, elseLBrace, elseRBrace, hasElse: true };
+      }
+    }
+    return { thenLBrace, thenRBrace, elseLBrace: -1, elseRBrace: -1, hasElse: false };
+  };
+
+  // Measure an if-expression starting at startIdx (which may be '(' or 'if').
+  // Returns inline rendered length, whether it spans newlines, and end index (inclusive).
+  const measureIfExpression = (startIdx: number): { length: number; hasNewlines: boolean; endIdx: number } | null => {
+    const start = isIfExpressionStart(startIdx);
+    if (!start.isIf) return null;
+    const struct = findIfExpressionStructure(start.ifIdx);
+    if (!struct) return null;
+    const lastIdx = struct.hasElse ? struct.elseRBrace : struct.thenRBrace;
+
+    let endIdx = lastIdx;
+    if (start.hasParen) {
+      let j = lastIdx + 1;
+      while (j < tokens.length && tokens[j].type === TokenType.NEWLINE) j++;
+      if (j < tokens.length && tokens[j].type === TokenType.RPAREN) {
+        endIdx = j;
+      }
+    }
+
+    const collected: Token[] = [];
+    let foundNewline = false;
+    for (let j = startIdx; j <= endIdx; j++) {
+      if (tokens[j].type === TokenType.NEWLINE) foundNewline = true;
+      else collected.push(tokens[j]);
+    }
+    return { length: tokensToString(collected).length, hasNewlines: foundNewline, endIdx };
+  };
+
+  // Reconstruct a source string from a slice of tokens for recursive formatting.
+  // Joins non-newline tokens with single spaces and preserves newline/comment structure.
+  const reconstructSource = (toks: Token[]): string => {
+    let src = '';
+    for (const t of toks) {
+      if (t.type === TokenType.NEWLINE) {
+        src += '\n';
+      } else if (t.type === TokenType.COMMENT) {
+        if (src.length > 0 && !src.endsWith('\n')) src += '\n';
+        src += t.value + '\n';
+      } else {
+        if (src.length > 0 && !src.endsWith('\n') && !src.endsWith(' ')) src += ' ';
+        src += t.value;
+      }
+    }
+    return src;
+  };
+
+  // Format the body inside { ... } by recursively formatting and re-indenting.
+  const formatBlockBody = (startTokenIdx: number, endTokenIdx: number): void => {
+    if (startTokenIdx > endTokenIdx) return;
+
+    let lo = startTokenIdx;
+    let hi = endTokenIdx;
+    while (lo <= hi && tokens[lo].type === TokenType.NEWLINE) lo++;
+    while (hi >= lo && tokens[hi].type === TokenType.NEWLINE) hi--;
+    if (lo > hi) return;
+
+    const bodyTokens = tokens.slice(lo, hi + 1);
+    const src = reconstructSource(bodyTokens);
+    if (!src.trim()) return;
+
+    const formatted = format(src, opts);
+    const trimmedFormatted = formatted.endsWith('\n') ? formatted.slice(0, -1) : formatted;
+
+    const indentStr = indent();
+    const formattedLines = trimmedFormatted.split('\n');
+    for (const line of formattedLines) {
+      if (line.trim() === '') {
+        lines.push('');
+      } else {
+        lines.push(indentStr + line);
+      }
+    }
+  };
+
+  // Detect whether the condition of an if-expression starts with `(` and that
+  // paren spans multiple lines — if so, return the index of the matching `)`.
+  // Used to render `if (multiline arithmetic) > comparison { ... }` cleanly.
+  const findMultilineParenCondEnd = (ifIdx: number, thenLBrace: number): number => {
+    let firstIdx = ifIdx + 1;
+    while (firstIdx < thenLBrace && tokens[firstIdx].type === TokenType.NEWLINE) firstIdx++;
+    if (firstIdx >= thenLBrace || tokens[firstIdx].type !== TokenType.LPAREN) return -1;
+
+    let depth = 1;
+    let parenEnd = -1;
+    let foundNewline = false;
+    for (let j = firstIdx + 1; j < thenLBrace; j++) {
+      if (tokens[j].type === TokenType.LPAREN) depth++;
+      else if (tokens[j].type === TokenType.RPAREN) {
+        depth--;
+        if (depth === 0) { parenEnd = j; break; }
+      } else if (tokens[j].type === TokenType.NEWLINE) {
+        foundNewline = true;
+      }
+    }
+    return foundNewline ? parenEnd : -1;
+  };
+
+  // Format an if-expression on multiple lines.
+  // Returns the index after the if-expression (where main loop should resume).
+  const formatIfExpressionMultiline = (startIdx: number): number => {
+    const start = isIfExpressionStart(startIdx);
+    if (!start.isIf) return startIdx + 1;
+    const struct = findIfExpressionStructure(start.ifIdx);
+    if (!struct) return startIdx + 1;
+
+    const ifToken = tokens[start.ifIdx];
+    const openPrefix = start.hasParen ? '(' : '';
+    const prevIsOp = prevTokenIsOperator(startIdx);
+
+    // Compute the closing line up front since both layouts share it.
+    let returnIdx = struct.hasElse ? struct.elseRBrace + 1 : struct.thenRBrace + 1;
+    let closeLine = '}';
+    if (start.hasParen) {
+      let j = returnIdx;
+      while (j < tokens.length && tokens[j].type === TokenType.NEWLINE) j++;
+      if (j < tokens.length && tokens[j].type === TokenType.RPAREN) {
+        closeLine = '})';
+        returnIdx = j + 1;
+      }
+    }
+
+    // Special layout for a condition shaped like `(multiline arithmetic) <comparison>`.
+    // Without this, the inner arithmetic collapses onto the opening line and explodes its width.
+    let firstCondIdx = start.ifIdx + 1;
+    while (firstCondIdx < struct.thenLBrace && tokens[firstCondIdx].type === TokenType.NEWLINE) firstCondIdx++;
+    const condParenEnd = findMultilineParenCondEnd(start.ifIdx, struct.thenLBrace);
+    if (condParenEnd !== -1) {
+      const openLine = `${openPrefix}if (`;
+      if (prevIsOp && lines.length > 0) {
+        lines[lines.length - 1] = lines[lines.length - 1] + ' ' + openLine;
+      } else {
+        lines.push(indent() + openLine);
+      }
+
+      indentLevel++;
+      formatBlockBody(firstCondIdx + 1, condParenEnd - 1);
+      indentLevel--;
+
+      const tailTokens: Token[] = [];
+      for (let j = condParenEnd + 1; j < struct.thenLBrace; j++) {
+        if (tokens[j].type !== TokenType.NEWLINE) tailTokens.push(tokens[j]);
+      }
+      const tailStr = tailTokens.length > 0
+        ? ' ' + tokensToString(tailTokens, tokens[condParenEnd])
+        : '';
+      lines.push(indent() + ')' + tailStr + ' {');
+
+      indentLevel++;
+      formatBlockBody(struct.thenLBrace + 1, struct.thenRBrace - 1);
+      indentLevel--;
+
+      if (struct.hasElse) {
+        lines.push(indent() + '} else {');
+        indentLevel++;
+        formatBlockBody(struct.elseLBrace + 1, struct.elseRBrace - 1);
+        indentLevel--;
+      }
+
+      lines.push(indent() + closeLine);
+      return returnIdx;
+    }
+
+    // Default layout: inline condition on the opening line.
+    const conditionTokens: Token[] = [];
+    for (let j = start.ifIdx + 1; j < struct.thenLBrace; j++) {
+      if (tokens[j].type !== TokenType.NEWLINE) conditionTokens.push(tokens[j]);
+    }
+    const conditionStr = tokensToString(conditionTokens, ifToken);
+    const openLine = `${openPrefix}if ${conditionStr} {`;
+
+    if (prevIsOp && lines.length > 0) {
+      lines[lines.length - 1] = lines[lines.length - 1] + ' ' + openLine;
+    } else {
+      lines.push(indent() + openLine);
+    }
+
+    indentLevel++;
+    formatBlockBody(struct.thenLBrace + 1, struct.thenRBrace - 1);
+    indentLevel--;
+
+    if (struct.hasElse) {
+      lines.push(indent() + '} else {');
+      indentLevel++;
+      formatBlockBody(struct.elseLBrace + 1, struct.elseRBrace - 1);
+      indentLevel--;
+    }
+
+    lines.push(indent() + closeLine);
+    return returnIdx;
+  };
+
+  // === End if-expression helpers ===
+
   // Main processing loop
   while (i < tokens.length) {
     const token = tokens[i];
@@ -755,6 +1038,19 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
         pendingBlankLines += newlineCount - 1;
       }
       continue;
+    }
+
+    // Handle native if-expression: 'if cond { ... } else { ... }' or '(if ... { ... } else { ... })'
+    // This must run BEFORE the LPAREN handler so that '(if' is treated as one unit.
+    const ifInfo = isIfExpressionStart(i);
+    if (ifInfo.isIf) {
+      const measurement = measureIfExpression(i);
+      if (measurement && (measurement.length > opts.maxLineLength || measurement.hasNewlines)) {
+        i = formatIfExpressionMultiline(i);
+        if (i > 0) lastProcessedToken = tokens[i - 1];
+        continue;
+      }
+      // If short and single-line, fall through to normal line processing (stays inline)
     }
 
     // Handle function calls
@@ -908,6 +1204,17 @@ export function format(input: string, options: Partial<FormatOptions> = {}): str
       const { token: lookAheadToken } = peekNextToken(i + 1);
       if (shouldBreakBeforeToken(t, i, lineTokens, lookAheadToken)) {
         break;
+      }
+
+      // Stop at start of an if-expression (`if` or `(if`) that should be expanded.
+      // This mirrors the function-call break below and is what triggers
+      // multi-line expansion for native if/else statements.
+      const ifInfoInLine = isIfExpressionStart(i);
+      if (ifInfoInLine.isIf) {
+        const ifMeasurement = measureIfExpression(i);
+        if (ifMeasurement && (ifMeasurement.length > opts.maxLineLength || ifMeasurement.hasNewlines)) {
+          break;
+        }
       }
 
       // Stop at function call if it should be expanded

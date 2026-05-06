@@ -1,0 +1,8 @@
+# Nested function calls
+exp(-0.3 * IMPRESSION_COUNT)
+
+# Multiple nested functions
+max(min(x, 10), 0)
+
+# Function with multiple arguments
+IF(x >= 0, exp(-1.0 * min((x / 100.0), 10)), 0)

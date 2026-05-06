@@ -1,0 +1,200 @@
+# TODO(marv): rollback after handle sexual articles.
+# Filter business posts
+(
+  CANDIDATE_TYPE == candidate_type('BUSINESS_PROFILE_POST')
+  && !(EX_BUSINESS_ACCOUNT_ID in CTX_FOLLOW_BUSINESS_ACCOUNT_IDS)
+  && EX_BUSINESS_ACCOUNT_CREATED_BY_SOCIAL == 1
+)
+||
+
+# filter sexual contents
+(
+  USER_GENDER == 'M'
+  && (
+    EX_ARTICLE_TITLE matches '비키니'
+    || EX_ARTICLE_TITLE matches '모노키니'
+    || EX_ARTICLE_TITLE matches '여자 수영복'
+    || EX_ARTICLE_TITLE matches '치파오'
+    || EX_ARTICLE_TITLE matches '섹시'
+    || EX_ARTICLE_TITLE matches '착샷'
+    || (EX_ARTICLE_TITLE matches '팬티' && !(EX_ARTICLE_TITLE matches '남자') && !(EX_ARTICLE_TITLE matches '남성'))
+    || EX_ARTICLE_CONTENT matches '비키니'
+    || EX_ARTICLE_CONTENT matches '모노키니'
+    || EX_ARTICLE_CONTENT matches '여자 수영복'
+    || EX_ARTICLE_CONTENT matches '치파오'
+    || EX_ARTICLE_CONTENT matches '섹시'
+    || (EX_ARTICLE_CONTENT matches '팬티' && !(EX_ARTICLE_CONTENT matches '남자') && !(EX_ARTICLE_CONTENT matches '남성'))
+  )
+)
+||
+
+# filter job articles if user clicked HIDE_REASON_NOT_INTERESTED_IN_SERVICE within 4 weeks
+(
+  CTX_HOME_FEED_HIDE_SERVICE_JOB_TIMESTAMP_SEC >= 0 && CURRENT_TIMESTAMP_SEC >= CTX_HOME_FEED_HIDE_SERVICE_JOB_TIMESTAMP_SEC
+  && CANDIDATE_TYPE == candidate_type('JOB_POST')
+  && rand() <= 1 - min(
+    1.0,
+    (exp(1.0 * min(CURRENT_TIMESTAMP_SEC - CTX_HOME_FEED_HIDE_SERVICE_JOB_TIMESTAMP_SEC, 2419200) / 2419200.0) - 1) / (exp(1.0) - 1)
+  )
+)
+||
+
+# filter car articles if user clicked HIDE_REASON_NOT_INTERESTED_IN_SERVICE within 4 weeks
+(
+  CTX_HOME_FEED_HIDE_SERVICE_CAR_TIMESTAMP_SEC >= 0 && CURRENT_TIMESTAMP_SEC >= CTX_HOME_FEED_HIDE_SERVICE_CAR_TIMESTAMP_SEC
+  && CANDIDATE_TYPE == candidate_type('CAR_ARTICLE')
+  && rand() <= 1 - min(
+    1.0,
+    (exp(1.0 * min(CURRENT_TIMESTAMP_SEC - CTX_HOME_FEED_HIDE_SERVICE_CAR_TIMESTAMP_SEC, 2419200) / 2419200.0) - 1) / (exp(1.0) - 1)
+  )
+)
+||
+
+# filter realty articles if user clicked HIDE_REASON_NOT_INTERESTED_IN_SERVICE within 4 weeks
+(
+  CTX_HOME_FEED_HIDE_SERVICE_REALTY_TIMESTAMP_SEC >= 0 && CURRENT_TIMESTAMP_SEC >= CTX_HOME_FEED_HIDE_SERVICE_REALTY_TIMESTAMP_SEC
+  && CANDIDATE_TYPE == candidate_type('REALTY_ARTICLE')
+  && rand() <= 1 - min(
+    1.0,
+    (exp(1.0 * min(2419200.0, CURRENT_TIMESTAMP_SEC - CTX_HOME_FEED_HIDE_SERVICE_REALTY_TIMESTAMP_SEC) / 2419200.0) - 1) / (exp(1.0) - 1)
+  )
+)
+||
+
+# filter community groups if user clicked HIDE_REASON_OVEREXPOSED within 4 weeks
+(
+  CTX_HOME_FEED_HIDE_SERVICE_COMMUNITY_GROUP_TIMESTAMP_SEC >= 0 && CURRENT_TIMESTAMP_SEC >= CTX_HOME_FEED_HIDE_SERVICE_COMMUNITY_GROUP_TIMESTAMP_SEC
+  && CANDIDATE_TYPE == candidate_type('COMMUNITY_GROUP')
+  && rand() <= 1 - min(
+    1.0,
+    (exp(1.0 * min(2419200.0, CURRENT_TIMESTAMP_SEC - CTX_HOME_FEED_HIDE_SERVICE_COMMUNITY_GROUP_TIMESTAMP_SEC) / 2419200.0) - 1) / (exp(1.0) - 1)
+  )
+)
+||
+
+# filter business account if user clicked HIDE_REASON_OVEREXPOSED within 4 weeks
+(
+  EX_BUSINESS_ACCOUNT_HIDE_AGE_SEC >= 0
+  && CANDIDATE_TYPE == candidate_type('BUSINESS_PROFILE_POST')
+)
+||
+
+# filter aged status closed fleamarket articles
+(
+  CANDIDATE_TYPE == candidate_type('FLEAMARKET_ARTICLE')
+  && EX_ARTICLE_STATUS == 'closed'
+  && (CURRENT_TIMESTAMP_SEC - EX_PUBLISHED_AT_SEC) > 43200
+)
+||
+
+# filter fleamarket articles older than 2 years
+(
+  CANDIDATE_TYPE == candidate_type('FLEAMARKET_ARTICLE')
+  && (CURRENT_TIMESTAMP_SEC - EX_PUBLISHED_AT_SEC) > 63072000
+)
+||
+
+# filter traded car articles
+(
+  EX_ARTICLE_STATUS == 'Traded'
+  && CANDIDATE_TYPE == candidate_type('CAR_ARTICLE')
+  && rand() <= 0.95
+)
+||
+
+# filter accepted job articles
+(
+  CANDIDATE_TYPE == candidate_type('JOB_POST') && EX_ARTICLE_STATUS != 'ACCEPTED'
+)
+||
+
+# filter community group articles
+(
+  (CANDIDATE_TYPE == candidate_type('COMMUNITY_GROUP'))
+
+  # filter when user age has no overlap with community group member age range
+  && (
+    (
+      USER_AGE == '15-19' && GROUP_MEMBER_MIN_AGE > 19
+      || USER_AGE == '20-24' && (GROUP_MEMBER_MAX_AGE < 20 || GROUP_MEMBER_MIN_AGE > 24)
+      || USER_AGE == '25-29' && (GROUP_MEMBER_MAX_AGE < 25 || GROUP_MEMBER_MIN_AGE > 29)
+      || USER_AGE == '30-34' && (GROUP_MEMBER_MAX_AGE < 30 || GROUP_MEMBER_MIN_AGE > 34)
+      || USER_AGE == '35-39' && (GROUP_MEMBER_MAX_AGE < 35 || GROUP_MEMBER_MIN_AGE > 39)
+
+      # TODO(martin); Remove 40-49 and 50- when new model deployed.
+      || USER_AGE == '40-49' && (GROUP_MEMBER_MAX_AGE < 40 || GROUP_MEMBER_MIN_AGE > 49)
+      || USER_AGE == '50-' && GROUP_MEMBER_MAX_AGE < 50
+
+      # ================================================================
+      || USER_AGE == '40-44' && (GROUP_MEMBER_MAX_AGE < 40 || GROUP_MEMBER_MIN_AGE > 44)
+      || USER_AGE == '45-49' && (GROUP_MEMBER_MAX_AGE < 45 || GROUP_MEMBER_MIN_AGE > 49)
+      || USER_AGE == '50-54' && (GROUP_MEMBER_MAX_AGE < 50 || GROUP_MEMBER_MIN_AGE > 54)
+      || USER_AGE == '55-59' && (GROUP_MEMBER_MAX_AGE < 55 || GROUP_MEMBER_MIN_AGE > 59)
+      || USER_AGE == '60-' && GROUP_MEMBER_MAX_AGE < 60
+    )
+    ||
+    (
+      (EX_ARTICLE_TOPIC == '' || EX_ARTICLE_TOPIC == 'unknown')
+      ||
+
+      # filter out category is 4(neighbor)
+      # Note: numerics are converted to float in math expression
+      (EX_ARTICLE_CATEGORY_ID < 0 || EX_ARTICLE_CATEGORY_ID == 4)
+      ||
+
+      # filter out when image is not present
+      (!(EX_ARTICLE_PROFILE_IMAGE_ID matches '^kr-community#.*'))
+      ||
+
+      # filter out when member count is less than 2
+      (EX_ARTICLE_MEMBER_COUNT < 1)
+      ||
+
+      # filter out with no post or meetup
+      (EX_ARTICLE_POST_COUNT + EX_ARTICLE_MEETUP_COUNT < 1)
+      ||
+
+      # filter out when last activated at is more than 7 days
+      (CURRENT_TIMESTAMP_SEC - EX_ARTICLE_LAST_ACTIVATED_AT_SEC > 604800)
+      ||
+
+      # filter out if gender mismatches
+      (USER_GENDER == 'M' && EX_ARTICLE_GENDER == '여성') || (USER_GENDER == 'F' && EX_ARTICLE_GENDER == '남성')
+      ||
+
+      # filter out when is_unsafe is true
+      (EX_ARTICLE_IS_UNSAFE == 1)
+    )
+  )
+)
+||
+
+# filter realty articles
+(
+  CANDIDATE_TYPE == candidate_type('REALTY_ARTICLE')
+  && (
+    # filter out whether sale type is not in ['apart', 'officetel', 'one_room', 'two_room', 'store']
+    !(EX_ARTICLE_REALTY_SALE_TYPE in ['apart', 'officetel', 'one_room', 'two_room', 'store'])
+    ||
+
+    # filter out when traded
+    EX_ARTICLE_STATUS == 'Traded'
+    ||
+
+    # filter out when image is not present
+    EX_ARTICLE_IS_IMAGE_PRESENCE == 0
+    ||
+
+    # filter out when abuse suspicious
+    EX_ARTICLE_IS_ABUSE_SUSPICIOUS == 1
+    ||
+
+    # filter out when hide
+    EX_ARTICLE_IS_HIDE == 1
+  )
+)
+||
+(
+  CANDIDATE_TYPE == candidate_type('BUSINESS_PROFILE_POST')
+  && ((CURRENT_TIMESTAMP_SEC - EX_BUSINESS_POST_UPDATED_AT) > 604800) # 7 days
+)

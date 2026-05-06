@@ -1,0 +1,15 @@
+# Basic formatting test
+x + y * z
+
+# Parentheses indentation
+(a + b) * (c + d)
+
+# Nested parentheses
+((a + b) * c)
+
+# Multiple lines
+(a + b * c)
+
+* (A matches 'A' && (B matches 'B')
+
+* IF(VAR >= 1, -1, 1)
