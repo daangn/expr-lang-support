@@ -1,0 +1,21 @@
+1.0
+* (if RECENT_HOME_FEED_FLEA_MARKET_ARTICLE_CLICK_COUNT == 0 && RECENT_RECOMMEND_REQUEST_COUNT == 0 {
+  0.45 / 0.72
+} else {
+  1
+})
+* (if 0 < RECENT_HOME_FEED_FLEA_MARKET_ARTICLE_CLICK_COUNT && RECENT_RECOMMEND_REQUEST_COUNT >= 0 {
+  exp(-0.7 * min(21600.0, max(0, CURRENT_TIMESTAMP_SEC - EXAMPLE_PUBLISHED_AT_SEC)) / 21600.0)
+} else {
+  1
+})
+
+# Short if/else stays inline
+* (if x > 0 { 1 } else { 0 })
+
+# Already multiline if/else is preserved
+* (if x > 0 {
+  a + b
+} else {
+  c + d
+})

@@ -104,20 +104,20 @@ If you prefer plain brackets without colors:
 
 ## Formatting Examples
 
-### Example 1: Auto-expansion for long expressions
+### Example 1: Auto-expansion for long if/else expressions
 
 **Before:**
 ```expr
-IF(CANDIDATE_TYPE == candidate_type('ARTICLE'), calculate_score(Q_VALUE, P_IMPRESSION, OPERATION_SCORE), 0)
+(if RECENT_HOME_FEED_FLEA_MARKET_ARTICLE_CLICK_COUNT == 0 && RECENT_RECOMMEND_REQUEST_COUNT == 0 { 0.45 / 0.72 } else { 1 })
 ```
 
 **After:**
 ```expr
-IF(
-  CANDIDATE_TYPE == candidate_type('ARTICLE'),
-  calculate_score(Q_VALUE, P_IMPRESSION, OPERATION_SCORE),
-  0
-)
+(if RECENT_HOME_FEED_FLEA_MARKET_ARTICLE_CLICK_COUNT == 0 && RECENT_RECOMMEND_REQUEST_COUNT == 0 {
+  0.45 / 0.72
+} else {
+  1
+})
 ```
 
 ### Example 2: Smart spacing and negative numbers
@@ -125,13 +125,13 @@ IF(
 **Before:**
 ```expr
 min(1.0,(exp(2.0) - 1))
-IF(x > 0, - 1, - 2)
+(if x > 0 { - 1 } else { - 2 })
 ```
 
 **After:**
 ```expr
 min(1.0, (exp(2.0) - 1))
-IF(x > 0, -1, -2)
+(if x > 0 { -1 } else { -2 })
 ```
 
 ### Example 3: Comment handling

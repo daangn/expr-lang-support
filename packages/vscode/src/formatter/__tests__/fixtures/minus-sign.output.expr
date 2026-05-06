@@ -1,0 +1,13 @@
+# Test case 1: Binary operator (should have space after -)
+# Engagement scores
+* (
+  3.24102 * Q_VALUE_FLEAMARKET_ARTICLE
+  + 9.91502 * P_IMPRESSION_TO_WATCH_FLEAMARKET_ARTICLE
+  - 83.91478 * P_IMPRESSION_TO_HIDE_FLEAMARKET_ARTICLE
+)
+
+# Test case 2: Unary minus (should stay attached)
+# Report count decay
+* exp(
+  -0.14 * min(REPORT_COUNT_FLEAMARKET_ARTICLE, 5)
+)
